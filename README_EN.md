@@ -11,6 +11,12 @@ Compared with V1, V2:
 - tracks efficiency metrics such as output tokens and cost per correct hit,
 - keeps all V2 datasets, notebooks, and results isolated under `data/processed/v2`, `notebooks/v2`, and `results/v2`.
 
+## View On GitHub
+
+- GitHub-rendered report: [`results/v2/report/04_report_v2.executed.ipynb`](results/v2/report/04_report_v2.executed.ipynb)
+- Source notebook: [`notebooks/v2/04_report_v2.ipynb`](notebooks/v2/04_report_v2.ipynb)
+- HTML download: [`v2.0.0 HTML report`](https://github.com/melody-ling-L/llm-long-context-eval-zh-V2/releases/download/v2.0.0/llm-long-context-eval-zh-V2-report.html)
+
 ## Snapshot
 
 - 3 models: DeepSeek / Kimi / Qwen

@@ -15,6 +15,14 @@ V1 基线仓库见：[llm-long-context-eval-zh](https://github.com/melody-ling-L
 
 ---
 
+## GitHub 直接查看
+
+- GitHub 渲染报告：[`results/v2/report/04_report_v2.executed.ipynb`](results/v2/report/04_report_v2.executed.ipynb)
+- 源 notebook：[`notebooks/v2/04_report_v2.ipynb`](notebooks/v2/04_report_v2.ipynb)
+- HTML 下载版：[`v2.0.0 HTML 报告`](https://github.com/melody-ling-L/llm-long-context-eval-zh-V2/releases/download/v2.0.0/llm-long-context-eval-zh-V2-report.html)
+
+---
+
 ## V2 Results
 
 | DeepSeek | Kimi | Qwen |
