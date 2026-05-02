@@ -1,0 +1,104 @@
+[
+  {
+    "id": "finance_capex_budget",
+    "variant": "style_aligned",
+    "domain": "finance",
+    "difficulty": "medium",
+    "answer_type": "numeric",
+    "needle": "根据董事会审议通过的预算方案，公司 2025 年资本开支上限为 18.6 亿元。",
+    "question": "公司 2025 年资本开支上限是多少？",
+    "answer": "18.6亿元"
+  },
+  {
+    "id": "healthcare_inventory_turnover",
+    "variant": "style_aligned",
+    "domain": "healthcare",
+    "difficulty": "medium",
+    "answer_type": "short_span",
+    "needle": "院内周报显示，急诊药房的重点监控药品库存周转天数已压缩至 6.5 天。",
+    "question": "急诊药房重点监控药品的库存周转天数是多少？",
+    "answer": "6.5天"
+  },
+  {
+    "id": "manufacturing_yield_target",
+    "variant": "style_aligned",
+    "domain": "manufacturing",
+    "difficulty": "medium",
+    "answer_type": "numeric",
+    "needle": "产线月度经营复盘中明确，本季度封装段一次良率目标为 98.2%。",
+    "question": "本季度封装段一次良率目标是多少？",
+    "answer": "98.2%"
+  },
+  {
+    "id": "finance_numeric_confusable_margin",
+    "variant": "numeric_confusable",
+    "domain": "finance",
+    "difficulty": "hard",
+    "answer_type": "numeric",
+    "needle": "管理层说明指出，2025 年一季度综合毛利率为 23.7%，营业利润率为 11.4%，其中对外披露口径要求优先引用综合毛利率。",
+    "question": "2025 年一季度综合毛利率是多少？",
+    "answer": "23.7%"
+  },
+  {
+    "id": "retail_numeric_confusable_growth",
+    "variant": "numeric_confusable",
+    "domain": "retail",
+    "difficulty": "hard",
+    "answer_type": "numeric",
+    "needle": "门店运营简报写明，同店销售额同比增长 8.9%，会员复购率提升 3.2 个百分点，问题若仅问销售增长应返回同店销售额同比增幅。",
+    "question": "同店销售额同比增长了多少？",
+    "answer": "8.9%"
+  },
+  {
+    "id": "logistics_numeric_confusable_sla",
+    "variant": "numeric_confusable",
+    "domain": "logistics",
+    "difficulty": "hard",
+    "answer_type": "numeric",
+    "needle": "区域配送周报同时列出 96.4% 的妥投率和 92.1% 的 24 小时履约率，其中 SLA 对外口径指 24 小时履约率。",
+    "question": "区域配送的 SLA 指标是多少？",
+    "answer": "92.1%"
+  },
+  {
+    "id": "finance_multi_key_fcf",
+    "variant": "multi_key",
+    "domain": "finance",
+    "difficulty": "hard",
+    "answer_type": "numeric",
+    "needle": "董事会最终批准的年度自由现金流目标为 9.4 亿元。",
+    "distractor_needles": [
+      "财务部早期草案曾讨论将年度自由现金流目标设为 8.7 亿元，但该方案未获批准。",
+      "上一财年的自由现金流实际完成值为 7.9 亿元。"
+    ],
+    "question": "董事会最终批准的年度自由现金流目标是多少？",
+    "answer": "9.4亿元"
+  },
+  {
+    "id": "manufacturing_multi_key_line_switch",
+    "variant": "multi_key",
+    "domain": "manufacturing",
+    "difficulty": "hard",
+    "answer_type": "short_span",
+    "needle": "工厂排产会上确认，A3 产线切换到新工艺的正式日期为 2025 年 6 月 18 日。",
+    "distractor_needles": [
+      "工程试跑记录显示，A3 产线在 2025 年 6 月 12 日完成了小批量验证。",
+      "A2 产线切换到同类工艺的历史日期为 2025 年 5 月 30 日。"
+    ],
+    "question": "A3 产线切换到新工艺的正式日期是哪天？",
+    "answer": "2025年6月18日"
+  },
+  {
+    "id": "healthcare_multi_key_bed_plan",
+    "variant": "multi_key",
+    "domain": "healthcare",
+    "difficulty": "hard",
+    "answer_type": "numeric",
+    "needle": "院务会最终批准的日间手术中心新增床位数为 42 张。",
+    "distractor_needles": [
+      "规划部门的测算底稿曾建议新增 36 张床位以控制初期成本。",
+      "去年同院区普通病房实际新增床位数为 28 张。"
+    ],
+    "question": "院务会最终批准的日间手术中心新增床位数是多少？",
+    "answer": "42张"
+  }
+]

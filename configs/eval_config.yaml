@@ -1,0 +1,55 @@
+# ==============================
+# 模型配置
+# ==============================
+models:
+  deepseek:
+    api_base: "https://api.deepseek.com/v1"
+    model_name: "deepseek-chat"
+    max_tokens: 256
+    rpm_limit: 60          # requests per minute
+
+  kimi:
+    api_base: "https://api.moonshot.cn/v1"
+    model_name: "moonshot-v1-128k"
+    max_tokens: 256
+    rpm_limit: 20
+
+  qwen:
+    api_base: "https://dashscope.aliyuncs.com/compatible-mode/v1"
+    model_name: "qwen-long"
+    max_tokens: 256
+    rpm_limit: 60
+
+# ==============================
+# 评测参数
+# ==============================
+eval:
+  # 测试的上下文长度（字符数）
+  # 建议先用小值快速验证，再放开
+  context_lengths: [2000, 4000, 8000, 16000, 32000, 64000]
+
+  # Needle 插入深度（占文档百分比）
+  # 0 = 最开头，100 = 最结尾
+  depth_percentages: [0, 10, 25, 50, 75, 90, 100]
+
+  # 每个 (context_length × depth_pct) 组合的样本数
+  # 建议 1~3，增大会成倍增加 API 费用
+  niah:
+    num_samples_per_config: 1
+
+  # 多跳推理样本数（需要手动标注 data/needles/multihop_qa.json）
+  multi_hop:
+    num_samples: 20
+
+# ==============================
+# 路径配置
+# ==============================
+data:
+  raw_dir: "data/raw"
+  needles_dir: "data/needles"
+  processed_dir: "data/processed"
+
+results:
+  raw_dir: "results/raw"
+  processed_dir: "results/processed"
+  figures_dir: "results/figures"

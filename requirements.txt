@@ -1,0 +1,20 @@
+# Core
+openai>=1.30.0
+python-dotenv>=1.0.0
+pyyaml>=6.0
+tqdm>=4.66.0
+tiktoken>=0.7.0
+
+# Data
+pandas>=2.0.0
+numpy>=1.26.0
+
+# Visualization
+matplotlib>=3.8.0
+seaborn>=0.13.0
+plotly>=5.20.0
+kaleido>=0.2.1      # plotly 静态图导出
+
+# Notebook
+jupyter>=1.0.0
+ipywidgets>=8.0.0

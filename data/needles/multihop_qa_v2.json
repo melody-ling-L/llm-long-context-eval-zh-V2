@@ -1,0 +1,34 @@
+[
+  {
+    "domain": "finance",
+    "difficulty": "medium",
+    "hops": 2,
+    "context": "公司披露 2025 年第一季度收入为 126 亿元。董事会会议纪要又提到，研发费用率计划提升至收入的 7.5%。",
+    "question": "按照计划，2025 年第一季度对应的研发费用预算约是多少？",
+    "answer": "9.45亿元"
+  },
+  {
+    "domain": "manufacturing",
+    "difficulty": "medium",
+    "hops": 2,
+    "context": "A5 产线每小时标准产能为 180 件。生产运营日报显示，本周该产线平均开机 14 小时/天。",
+    "question": "按标准产能估算，A5 产线一天可生产多少件？",
+    "answer": "2520件"
+  },
+  {
+    "domain": "healthcare",
+    "difficulty": "hard",
+    "hops": 2,
+    "context": "院内质控要求明确，发热门诊核酸结果需在采样后 4 小时内回传。值班表显示，本周夜班样本统一在 19:30 完成集中采样。",
+    "question": "按质控要求，夜班样本最晚应在什么时间前回传结果？",
+    "answer": "23:30前"
+  },
+  {
+    "domain": "retail",
+    "difficulty": "hard",
+    "hops": 2,
+    "context": "城市店样板计划要求新会员首月复购率达到 32%。本月新增会员人数为 4800 人。",
+    "question": "按样板计划估算，本月应有多少名新会员在首月完成复购？",
+    "answer": "1536人"
+  }
+]

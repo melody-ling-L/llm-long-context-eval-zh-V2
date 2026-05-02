@@ -1,0 +1,44 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.Python
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Virtual env
+.venv/
+venv/
+env/
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb_checkpoints
+
+# Environment & secrets
+.env
+*.env
+
+# Data & results (large files)
+data/raw/*.txt
+data/raw/*.md
+data/raw/*.pdf
+data/processed/*.jsonl
+# results/raw/*.csv             # 允许提交最终原始结果，便于复现与 GitHub 展示
+results/raw/*.bak
+# results/processed/*.csv       # 允许提交评分结果，便于复现分析结论
+# results/figures/*.png         # 允许提交静态图表，供 README 直接渲染
+results/figures/*.html
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
