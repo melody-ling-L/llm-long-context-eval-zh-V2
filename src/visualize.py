@@ -2,10 +2,11 @@
 可视化模块
 
 提供：
-- plot_niah_heatmap()              NIAH 热力图（静态，matplotlib/seaborn）
-- plot_niah_heatmap_interactive()  NIAH 交互式热力图（plotly，notebook 友好）
-- plot_accuracy_by_length()        跨模型准确率 vs 上下文长度折线图
-- plot_position_bias()             "Lost in the Middle" 位置偏差柱状图
+- plot_niah_heatmap()                 NIAH 热力图（静态，matplotlib/seaborn）
+- plot_niah_heatmap_interactive()     NIAH 交互式热力图（plotly，notebook 友好）
+- plot_accuracy_by_length()           跨模型准确率 vs 上下文长度折线图
+- plot_accuracy_by_length_with_ci()   跨模型准确率 vs 上下文长度折线图（含 95% CI）
+- plot_position_bias()                "Lost in the Middle" 位置偏差柱状图
 """
 
 from pathlib import Path
@@ -33,11 +34,21 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 FIGURES_DIR = PROJECT_ROOT / "results/figures"
 FIGURES_DIR.mkdir(parents=True, exist_ok=True)
 
+MODEL_DISPLAY_NAMES = {
+    "deepseek": "DeepSeek-V3 (API: deepseek-chat)",
+    "kimi": "Kimi (Moonshot, API: moonshot-v1-128k)",
+    "qwen": "Qwen-Long (API: qwen-long)",
+}
+
 
 def _resolve_figures_dir(figures_dir: str | Path | None = None) -> Path:
     path = FIGURES_DIR if figures_dir is None else Path(figures_dir)
     path.mkdir(parents=True, exist_ok=True)
     return path
+
+
+def format_model_name(model: str) -> str:
+    return MODEL_DISPLAY_NAMES.get(str(model), str(model))
 
 
 # ──────────────────────────────────────────────
@@ -56,6 +67,7 @@ def plot_niah_heatmap(
     行 = context_length，列 = depth_pct，颜色 = 准确率。
     """
     sub = df[df["model"] == model].copy()
+    model_label = format_model_name(model)
     pivot = sub.pivot_table(
         index="context_length",
         columns="depth_pct",
@@ -76,7 +88,7 @@ def plot_niah_heatmap(
         cbar_kws={"label": "准确率 (%)"},
     )
     ax.set_title(
-        f"NIAH 热力图 — {model}\n"
+        f"NIAH 热力图 — {model_label}\n"
         f"（列: Needle 插入深度 %，行: 上下文字符长度，格值: Contains Accuracy %）",
         fontsize=13,
         pad=14,
@@ -109,6 +121,7 @@ def plot_niah_heatmap_interactive(
     在 Jupyter Notebook 中直接展示，也可导出 HTML。
     """
     sub = df[df["model"] == model].copy()
+    model_label = format_model_name(model)
     pivot = (
         sub.pivot_table(
             index="context_length",
@@ -125,7 +138,7 @@ def plot_niah_heatmap_interactive(
         color_continuous_scale="RdYlGn",
         zmin=0,
         zmax=100,
-        title=f"NIAH 交互式热力图 — {model}",
+        title=f"NIAH 交互式热力图 — {model_label}",
         labels={
             "x": "Needle 插入深度 (%)",
             "y": "上下文长度 (chars)",
@@ -172,7 +185,7 @@ def plot_accuracy_by_length(
             sub["context_length"],
             sub[score_col],
             marker=markers[idx % len(markers)],
-            label=model,
+            label=format_model_name(model),
             linewidth=2.2,
             markersize=8,
         )
@@ -187,6 +200,66 @@ def plot_accuracy_by_length(
 
     if save:
         path = _resolve_figures_dir(figures_dir) / "accuracy_by_length.png"
+        fig.savefig(path, dpi=150, bbox_inches="tight")
+        print(f"✅ 已保存: {path}")
+
+    return fig
+
+
+def plot_accuracy_by_length_with_ci(
+    summary_df: pd.DataFrame,
+    save: bool = True,
+    figures_dir: str | Path | None = None,
+) -> plt.Figure:
+    """
+    使用汇总后的长度级结果绘制准确率均值与 95% CI。
+    适合直接判断 16K / 32K 的回升是否具有统计意义。
+    """
+    required_cols = {
+        "model",
+        "context_length",
+        "contains_pct",
+        "contains_ci_low_pct",
+        "contains_ci_high_pct",
+    }
+    missing_cols = required_cols - set(summary_df.columns)
+    if missing_cols:
+        raise ValueError(f"summary_df 缺少必要列: {sorted(missing_cols)}")
+
+    plot_df = summary_df.copy()
+    plot_df = plot_df.sort_values(["model", "context_length"])
+
+    fig, ax = plt.subplots(figsize=(10, 6))
+    markers = ["o", "s", "^", "D", "v"]
+
+    for idx, (model, sub) in enumerate(plot_df.groupby("model")):
+        sub = sub.sort_values("context_length")
+        x = sub["context_length"].to_numpy()
+        y = sub["contains_pct"].to_numpy(dtype=float)
+        lower = y - sub["contains_ci_low_pct"].to_numpy(dtype=float)
+        upper = sub["contains_ci_high_pct"].to_numpy(dtype=float) - y
+
+        ax.errorbar(
+            x,
+            y,
+            yerr=np.vstack([lower, upper]),
+            marker=markers[idx % len(markers)],
+            linewidth=2.2,
+            markersize=7,
+            capsize=4,
+            label=format_model_name(model),
+        )
+
+    ax.set_xlabel("上下文长度 (chars)", fontsize=12)
+    ax.set_ylabel("准确率 (%) — Contains Match", fontsize=12)
+    ax.set_title("跨模型 NIAH 准确率 vs 上下文长度（含 95% CI）", fontsize=14)
+    ax.legend(fontsize=11)
+    ax.grid(True, alpha=0.3)
+    ax.set_ylim(0, 108)
+    plt.tight_layout()
+
+    if save:
+        path = _resolve_figures_dir(figures_dir) / "accuracy_by_length_with_ci.png"
         fig.savefig(path, dpi=150, bbox_inches="tight")
         print(f"✅ 已保存: {path}")
 
@@ -237,7 +310,7 @@ def plot_position_bias(
             x + i * width - (len(models) - 1) * width / 2,
             vals,
             width * 0.9,
-            label=model,
+            label=format_model_name(model),
             color=colors[i % len(colors)],
         )
         # 在柱顶标数字
