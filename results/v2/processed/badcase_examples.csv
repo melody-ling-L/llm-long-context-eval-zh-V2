@@ -1,0 +1,16 @@
+﻿model,variant,domain,context_length,depth_pct,question,expected_answer,model_response,badcase_taxonomy,contains_score,em_score
+deepseek,multi_key,manufacturing,4000,10.0,A3 产线切换到新工艺的正式日期是哪天？,2025年6月18日,,多 key 条件下定位失败,0,0
+deepseek,multi_key,finance,4000,10.0,董事会最终批准的年度自由现金流目标是多少？,9.4亿元,,多 key 条件下定位失败,0,0
+deepseek,multi_key,manufacturing,4000,50.0,A3 产线切换到新工艺的正式日期是哪天？,2025年6月18日,,多 key 条件下定位失败,0,0
+deepseek,style_aligned,finance,8000,10.0,公司 2025 年资本开支上限是多少？,18.6亿元,,未作答或信息未命中,0,0
+deepseek,style_aligned,manufacturing,8000,100.0,本季度封装段一次良率目标是多少？,98.2%,,未作答或信息未命中,0,0
+deepseek,style_aligned,finance,16000,90.0,公司 2025 年资本开支上限是多少？,18.6亿元,,未作答或信息未命中,0,0
+deepseek,style_aligned,finance,8000,50.0,公司 2025 年资本开支上限是多少？,18.6亿元,,深层位置召回失败,0,0
+deepseek,style_aligned,manufacturing,8000,75.0,本季度封装段一次良率目标是多少？,98.2%,,深层位置召回失败,0,0
+deepseek,style_aligned,healthcare,8000,75.0,急诊药房重点监控药品的库存周转天数是多少？,6.5天,,深层位置召回失败,0,0
+deepseek,numeric_confusable,logistics,2000,10.0,区域配送的 SLA 指标是多少？,92.1%,24小时履约率。,被相似数字干扰,0,0
+deepseek,numeric_confusable,logistics,2000,75.0,区域配送的 SLA 指标是多少？,92.1%,24小时履约率。,被相似数字干扰,0,0
+deepseek,numeric_confusable,logistics,4000,50.0,区域配送的 SLA 指标是多少？,92.1%,24小时履约率。,被相似数字干扰,0,0
+deepseek,multi_key,healthcare,2000,0.0,院务会最终批准的日间手术中心新增床位数是多少？,42张,42张。,输出冗余但包含正确答案,1,0
+deepseek,style_aligned,finance,2000,10.0,公司 2025 年资本开支上限是多少？,18.6亿元,18.6亿元。,输出冗余但包含正确答案,1,0
+deepseek,style_aligned,healthcare,2000,10.0,急诊药房重点监控药品的库存周转天数是多少？,6.5天,6.5天。,输出冗余但包含正确答案,1,0

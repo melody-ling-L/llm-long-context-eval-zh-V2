@@ -8,11 +8,32 @@
 
 from __future__ import annotations
 
+import re
 from math import sqrt
 
 import pandas as pd
 
-from src.metrics import _PRICE_TABLE, contains_match, exact_match
+from src.metrics import _PRICE_TABLE, contains_match, exact_match, normalize_answer
+
+
+_NUMBER_LIKE_PATTERN = re.compile(
+    r"(?:\d+(?:\.\d+)?%?)|(?:\d{1,2}:\d{2})|(?:\d{4}年\d{1,2}月\d{1,2}日)|(?:\d+(?:\.\d+)?(?:亿元|万元|元|件|张|天|人|小时))"
+)
+
+
+def _safe_text(value) -> str:
+    if pd.isna(value):
+        return ""
+    return str(value).strip()
+
+
+def _looks_empty_answer(value) -> bool:
+    normalized = normalize_answer(_safe_text(value))
+    return normalized in {"", "nan", "none"}
+
+
+def _has_number_like_signal(value) -> bool:
+    return bool(_NUMBER_LIKE_PATTERN.search(_safe_text(value)))
 
 
 def score_results_v2(df: pd.DataFrame) -> pd.DataFrame:
@@ -102,6 +123,84 @@ def summarize_variant_matrix(df: pd.DataFrame) -> pd.DataFrame:
     if "variant" not in df.columns:
         return pd.DataFrame()
     return summarize_v2(df, group_cols=["model", "variant"])
+
+
+def classify_badcase_taxonomy(row: pd.Series) -> str:
+    response = _safe_text(row.get("model_response", ""))
+    expected = _safe_text(row.get("expected_answer", ""))
+    task = str(row.get("task", "niah") or "niah")
+    variant = str(row.get("variant", "") or "")
+
+    contains = int(row.get("contains_score", contains_match(response, expected)))
+    em = int(row.get("em_score", exact_match(response, expected)))
+
+    if contains == 1 and em == 0:
+        return "输出冗余但包含正确答案"
+
+    if task == "multi_hop":
+        if _looks_empty_answer(response):
+            return "多跳推理未作答"
+        if _has_number_like_signal(response):
+            return "多跳推理链条或计算失败"
+        return "多跳推理答案偏移"
+
+    if variant == "multi_key":
+        return "多 key 条件下定位失败"
+    if variant == "numeric_confusable":
+        return "被相似数字干扰"
+
+    depth_pct = row.get("depth_pct")
+    if pd.notna(depth_pct):
+        try:
+            depth_value = float(depth_pct)
+        except (TypeError, ValueError):
+            depth_value = None
+        if depth_value is not None and 25 <= depth_value <= 75 and _looks_empty_answer(response):
+            return "深层位置召回失败"
+
+    if not _looks_empty_answer(response):
+        return "找到了附近信息但抽错目标值"
+    return "未作答或信息未命中"
+
+
+def attach_badcase_taxonomy(df: pd.DataFrame) -> pd.DataFrame:
+    annotated = df.copy()
+    if annotated.empty:
+        annotated["badcase_taxonomy"] = pd.Series(dtype="object")
+        annotated["is_badcase"] = pd.Series(dtype="int")
+        return annotated
+
+    annotated["badcase_taxonomy"] = annotated.apply(classify_badcase_taxonomy, axis=1)
+    annotated["is_badcase"] = ((annotated["contains_score"] == 0) | (annotated["em_score"] == 0)).astype(int)
+    return annotated
+
+
+def summarize_badcase_taxonomy(
+    df: pd.DataFrame,
+    group_cols: list[str] | None = None,
+    only_badcases: bool = True,
+) -> pd.DataFrame:
+    if group_cols is None:
+        group_cols = ["model", "badcase_taxonomy"]
+
+    annotated = attach_badcase_taxonomy(df)
+    if only_badcases:
+        annotated = annotated[annotated["is_badcase"] == 1].copy()
+    if annotated.empty:
+        return pd.DataFrame(columns=[*group_cols, "n", "share_pct", "contains_failures", "em_only_misses"])
+
+    total = max(len(annotated), 1)
+    summary = (
+        annotated.groupby(group_cols, dropna=False)
+        .agg(
+            n=("badcase_taxonomy", "size"),
+            contains_failures=("contains_score", lambda s: int((s == 0).sum())),
+            em_only_misses=("contains_score", lambda s: int((s == 1).sum())),
+        )
+        .reset_index()
+    )
+    summary["share_pct"] = (summary["n"] / total * 100).round(1)
+    return summary.sort_values(["n", *group_cols], ascending=[False, *([True] * len(group_cols))])
 
 
 def print_v2_summary(df: pd.DataFrame):

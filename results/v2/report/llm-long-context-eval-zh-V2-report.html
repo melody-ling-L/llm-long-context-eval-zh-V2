@@ -7802,20 +7802,23 @@ a.anchor-link {
 </div>
 <div class="jp-InputArea jp-Cell-inputArea"><div class="jp-InputPrompt jp-InputArea-prompt">
 </div><div class="jp-RenderedHTMLCommon jp-RenderedMarkdown jp-MarkdownOutput" data-mime-type="text/markdown">
-<h1 id="04-V2-%E5%AE%9E%E9%AA%8C%E6%8A%A5%E5%91%8A">04 V2 实验报告<a class="anchor-link" href="#04-V2-%E5%AE%9E%E9%AA%8C%E6%8A%A5%E5%91%8A">¶</a></h1><p><strong>用途</strong>：汇总 V2 的稳健性、效率和扩展任务结果，作为第二版分析报告。<br/>
+<h1 id="04-V2-%E5%AE%9E%E9%AA%8C%E6%8A%A5%E5%91%8A">04 V2 实验报告<a class="anchor-link" href="#04-V2-%E5%AE%9E%E9%AA%8C%E6%8A%A5%E5%91%8A">¶</a></h1><p><strong>用途</strong>：汇总 V2 的稳健性、效率、错误类型和扩展任务结果，作为第二版分析报告。<br/>
 <strong>定位</strong>：这不是 V1 结论的覆盖版，而是独立的 V2 报告壳。</p>
 <hr/>
-<h2 id="%E6%91%98%E8%A6%81">摘要<a class="anchor-link" href="#%E6%91%98%E8%A6%81">¶</a></h2><p>本报告优先回答四个 V2 问题：</p>
+<h2 id="%E6%91%98%E8%A6%81">摘要<a class="anchor-link" href="#%E6%91%98%E8%A6%81">¶</a></h2><p>本报告当前优先回答五个 V2 问题：</p>
 <ol>
 <li>将重复数从 3 提高到 10 后，16K / 32K 的结果是否更稳定</li>
 <li><code>style_aligned</code> / <code>numeric_confusable</code> / <code>multi_key</code> 三类 needle 的难度排序是什么</li>
 <li>哪个模型在“准确率 - 输出 token - 单位成本”三维上更均衡</li>
 <li><code>multi_hop</code> 与跨领域扩展是否已经接入并形成可分析结果</li>
+<li>badcase taxonomy 能否把“统计结果”推进成“可指导优化”的评测资产</li>
 </ol>
-<p>当前已经出现两个值得前置到结论区的强信号：</p>
+<p>当前已经出现四个值得前置到结论区的强信号：</p>
 <ul>
 <li><code>numeric_confusable</code> 是平均最难的变体，说明近似数字 / 字符串干扰比 style 对齐或多 key 干扰更容易击穿检索稳定性。</li>
+<li>DeepSeek-V3 (API: <code>deepseek-chat</code>) 的最大问题不是“找不到”，而是“输出冗余但包含正确答案”；这类 EM-only miss 已经成为当前最常见 badcase。</li>
 <li>Kimi (Moonshot, API: <code>moonshot-v1-128k</code>) 在 32K 条件下 Contains = 0.0%，Wilson 95% CI 上界仅 5.2%，更接近稳定失效而不是一次偶然波动。</li>
+<li><code>multi_hop</code> 已正式进入统一报告，但当前仍只是 4 条人工设计的真实业务口径样本 / 模型，三家 Contains 都在 50.0%，区间仍宽，应视为 real-task pilot 而非稳定排名。</li>
 </ul>
 <p>本文后续统一使用“展示名（API 名）”格式：DeepSeek-V3 (API: <code>deepseek-chat</code>)、Kimi (Moonshot, API: <code>moonshot-v1-128k</code>)、Qwen-Long (API: <code>qwen-long</code>)。</p>
 </div>
@@ -7843,19 +7846,34 @@ a.anchor-link {
 
 <span class="kn">import</span><span class="w"> </span><span class="nn">pandas</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">pd</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">matplotlib</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">matplotlib.pyplot</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">plt</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">IPython.display</span><span class="w"> </span><span class="kn">import</span> <span class="n">Image</span><span class="p">,</span> <span class="n">display</span> <span class="k">as</span> <span class="n">ipy_display</span>
 
 <span class="kn">import</span><span class="w"> </span><span class="nn">src.metrics_v2</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">metrics_v2_module</span>
 
 <span class="n">importlib</span><span class="o">.</span><span class="n">reload</span><span class="p">(</span><span class="n">metrics_v2_module</span><span class="p">)</span>
 
-<span class="kn">from</span><span class="w"> </span><span class="nn">src.metrics_v2</span><span class="w"> </span><span class="kn">import</span> <span class="n">summarize_v2</span><span class="p">,</span> <span class="n">summarize_variant_matrix</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">src.metrics_v2</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+    <span class="n">attach_badcase_taxonomy</span><span class="p">,</span>
+    <span class="n">summarize_badcase_taxonomy</span><span class="p">,</span>
+    <span class="n">summarize_v2</span><span class="p">,</span>
+    <span class="n">summarize_variant_matrix</span><span class="p">,</span>
+<span class="p">)</span>
 
 <span class="n">MODEL_DISPLAY_NAMES</span> <span class="o">=</span> <span class="p">{</span>
     <span class="s1">'deepseek'</span><span class="p">:</span> <span class="s1">'DeepSeek-V3 (API: deepseek-chat)'</span><span class="p">,</span>
     <span class="s1">'kimi'</span><span class="p">:</span> <span class="s1">'Kimi (Moonshot, API: moonshot-v1-128k)'</span><span class="p">,</span>
     <span class="s1">'qwen'</span><span class="p">:</span> <span class="s1">'Qwen-Long (API: qwen-long)'</span><span class="p">,</span>
 <span class="p">}</span>
+
+<span class="n">BADCASE_DISPLAY_ORDER</span> <span class="o">=</span> <span class="p">[</span>
+    <span class="s1">'找到了附近信息但抽错目标值'</span><span class="p">,</span>
+    <span class="s1">'被相似数字干扰'</span><span class="p">,</span>
+    <span class="s1">'深层位置召回失败'</span><span class="p">,</span>
+    <span class="s1">'输出冗余但包含正确答案'</span><span class="p">,</span>
+    <span class="s1">'多 key 条件下定位失败'</span><span class="p">,</span>
+    <span class="s1">'未作答或信息未命中'</span><span class="p">,</span>
+<span class="p">]</span>
 
 
 <span class="k">def</span><span class="w"> </span><span class="nf">format_model_name</span><span class="p">(</span><span class="n">model_key</span><span class="p">):</span>
@@ -7876,7 +7894,8 @@ a.anchor-link {
 <span class="n">matplotlib</span><span class="o">.</span><span class="n">rcParams</span><span class="p">[</span><span class="s1">'font.sans-serif'</span><span class="p">]</span> <span class="o">=</span> <span class="p">[</span><span class="s1">'PingFang SC'</span><span class="p">,</span> <span class="s1">'Hiragino Sans GB'</span><span class="p">,</span> <span class="s1">'Microsoft YaHei'</span><span class="p">,</span> <span class="s1">'SimHei'</span><span class="p">,</span> <span class="s1">'Arial Unicode MS'</span><span class="p">]</span>
 <span class="n">matplotlib</span><span class="o">.</span><span class="n">rcParams</span><span class="p">[</span><span class="s1">'axes.unicode_minus'</span><span class="p">]</span> <span class="o">=</span> <span class="kc">False</span>
 
-<span class="n">scored_path</span> <span class="o">=</span> <span class="n">PROJECT_ROOT</span> <span class="o">/</span> <span class="s1">'results/v2/processed/scored_results.csv'</span>
+<span class="n">processed_dir</span> <span class="o">=</span> <span class="n">PROJECT_ROOT</span> <span class="o">/</span> <span class="s1">'results/v2/processed'</span>
+<span class="n">scored_path</span> <span class="o">=</span> <span class="n">processed_dir</span> <span class="o">/</span> <span class="s1">'scored_results.csv'</span>
 <span class="n">dataset_path</span> <span class="o">=</span> <span class="n">PROJECT_ROOT</span> <span class="o">/</span> <span class="s1">'data/processed/v2/niah_dataset.jsonl'</span>
 <span class="n">multihop_dataset_path</span> <span class="o">=</span> <span class="n">PROJECT_ROOT</span> <span class="o">/</span> <span class="s1">'data/processed/v2/multihop_dataset.jsonl'</span>
 <span class="n">figures_dir</span> <span class="o">=</span> <span class="n">PROJECT_ROOT</span> <span class="o">/</span> <span class="s1">'results/v2/figures'</span>
@@ -7886,12 +7905,13 @@ a.anchor-link {
     <span class="k">if</span> <span class="s1">'task'</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">df</span><span class="o">.</span><span class="n">columns</span><span class="p">:</span>
         <span class="n">df</span><span class="p">[</span><span class="s1">'task'</span><span class="p">]</span> <span class="o">=</span> <span class="s1">'niah'</span>
     <span class="n">df</span><span class="p">[</span><span class="s1">'task'</span><span class="p">]</span> <span class="o">=</span> <span class="n">df</span><span class="p">[</span><span class="s1">'task'</span><span class="p">]</span><span class="o">.</span><span class="n">fillna</span><span class="p">(</span><span class="s1">'niah'</span><span class="p">)</span>
+    <span class="n">df</span> <span class="o">=</span> <span class="n">attach_badcase_taxonomy</span><span class="p">(</span><span class="n">df</span><span class="p">)</span>
 
     <span class="n">dataset_df</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">read_json</span><span class="p">(</span><span class="n">dataset_path</span><span class="p">,</span> <span class="n">lines</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span> <span class="k">if</span> <span class="n">dataset_path</span><span class="o">.</span><span class="n">exists</span><span class="p">()</span> <span class="k">else</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">()</span>
     <span class="n">multihop_dataset_df</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">read_json</span><span class="p">(</span><span class="n">multihop_dataset_path</span><span class="p">,</span> <span class="n">lines</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span> <span class="k">if</span> <span class="n">multihop_dataset_path</span><span class="o">.</span><span class="n">exists</span><span class="p">()</span> <span class="k">else</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">()</span>
 
     <span class="n">niah_df</span> <span class="o">=</span> <span class="n">df</span><span class="p">[</span><span class="n">df</span><span class="p">[</span><span class="s1">'task'</span><span class="p">]</span> <span class="o">==</span> <span class="s1">'niah'</span><span class="p">]</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
-    <span class="n">multihop_df</span> <span class="o">=</span> <span class="n">df</span><span class="p">[</span><span class="n">df</span><span class="p">[</span><span class="s1">'task'</span><span class="p">]</span> <span class="o">!=</span> <span class="s1">'niah'</span><span class="p">]</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
+    <span class="n">multihop_df</span> <span class="o">=</span> <span class="n">df</span><span class="p">[</span><span class="n">df</span><span class="p">[</span><span class="s1">'task'</span><span class="p">]</span> <span class="o">==</span> <span class="s1">'multi_hop'</span><span class="p">]</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
     <span class="n">models</span> <span class="o">=</span> <span class="nb">sorted</span><span class="p">(</span><span class="n">df</span><span class="p">[</span><span class="s1">'model'</span><span class="p">]</span><span class="o">.</span><span class="n">dropna</span><span class="p">()</span><span class="o">.</span><span class="n">unique</span><span class="p">()</span><span class="o">.</span><span class="n">tolist</span><span class="p">())</span>
     <span class="n">model_labels</span> <span class="o">=</span> <span class="p">[</span><span class="n">format_model_name</span><span class="p">(</span><span class="n">model</span><span class="p">)</span> <span class="k">for</span> <span class="n">model</span> <span class="ow">in</span> <span class="n">models</span><span class="p">]</span>
     <span class="n">variants</span> <span class="o">=</span> <span class="nb">sorted</span><span class="p">(</span><span class="n">niah_df</span><span class="p">[</span><span class="s1">'variant'</span><span class="p">]</span><span class="o">.</span><span class="n">dropna</span><span class="p">()</span><span class="o">.</span><span class="n">unique</span><span class="p">()</span><span class="o">.</span><span class="n">tolist</span><span class="p">())</span> <span class="k">if</span> <span class="s1">'variant'</span> <span class="ow">in</span> <span class="n">niah_df</span><span class="o">.</span><span class="n">columns</span> <span class="k">else</span> <span class="p">[]</span>
@@ -7902,6 +7922,12 @@ a.anchor-link {
     <span class="n">actual_niah_total</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">niah_df</span><span class="p">)</span>
     <span class="n">missing_niah_total</span> <span class="o">=</span> <span class="n">expected_niah_total</span> <span class="o">-</span> <span class="n">actual_niah_total</span>
     <span class="n">coverage_pct</span> <span class="o">=</span> <span class="n">actual_niah_total</span> <span class="o">/</span> <span class="n">expected_niah_total</span> <span class="o">*</span> <span class="mi">100</span> <span class="k">if</span> <span class="n">expected_niah_total</span> <span class="k">else</span> <span class="mf">0.0</span>
+
+    <span class="n">expected_multihop_per_model</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">multihop_dataset_df</span><span class="p">)</span>
+    <span class="n">expected_multihop_total</span> <span class="o">=</span> <span class="n">expected_multihop_per_model</span> <span class="o">*</span> <span class="nb">len</span><span class="p">(</span><span class="n">models</span><span class="p">)</span> <span class="k">if</span> <span class="n">expected_multihop_per_model</span> <span class="k">else</span> <span class="nb">len</span><span class="p">(</span><span class="n">multihop_df</span><span class="p">)</span>
+    <span class="n">actual_multihop_total</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">multihop_df</span><span class="p">)</span>
+    <span class="n">multihop_coverage_pct</span> <span class="o">=</span> <span class="n">actual_multihop_total</span> <span class="o">/</span> <span class="n">expected_multihop_total</span> <span class="o">*</span> <span class="mi">100</span> <span class="k">if</span> <span class="n">expected_multihop_total</span> <span class="k">else</span> <span class="mf">0.0</span>
+
     <span class="n">coverage_by_length</span> <span class="o">=</span> <span class="p">(</span>
         <span class="n">niah_df</span><span class="o">.</span><span class="n">groupby</span><span class="p">([</span><span class="s1">'model'</span><span class="p">,</span> <span class="s1">'context_length'</span><span class="p">])</span><span class="o">.</span><span class="n">size</span><span class="p">()</span><span class="o">.</span><span class="n">unstack</span><span class="p">(</span><span class="n">fill_value</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
         <span class="k">if</span> <span class="ow">not</span> <span class="n">niah_df</span><span class="o">.</span><span class="n">empty</span> <span class="k">else</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">()</span>
@@ -7915,6 +7941,62 @@ a.anchor-link {
     <span class="n">variant_summary</span> <span class="o">=</span> <span class="n">summarize_variant_matrix</span><span class="p">(</span><span class="n">niah_df</span><span class="p">)</span> <span class="k">if</span> <span class="ow">not</span> <span class="n">niah_df</span><span class="o">.</span><span class="n">empty</span> <span class="k">else</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">()</span>
     <span class="n">length_summary</span> <span class="o">=</span> <span class="n">summarize_v2</span><span class="p">(</span><span class="n">niah_df</span><span class="p">,</span> <span class="n">group_cols</span><span class="o">=</span><span class="p">[</span><span class="s1">'model'</span><span class="p">,</span> <span class="s1">'context_length'</span><span class="p">])</span> <span class="k">if</span> <span class="ow">not</span> <span class="n">niah_df</span><span class="o">.</span><span class="n">empty</span> <span class="k">else</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">()</span>
     <span class="n">task_summary</span> <span class="o">=</span> <span class="n">summarize_v2</span><span class="p">(</span><span class="n">df</span><span class="p">,</span> <span class="n">group_cols</span><span class="o">=</span><span class="p">[</span><span class="s1">'model'</span><span class="p">,</span> <span class="s1">'task'</span><span class="p">])</span> <span class="k">if</span> <span class="ow">not</span> <span class="n">df</span><span class="o">.</span><span class="n">empty</span> <span class="k">else</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">()</span>
+    <span class="n">multihop_summary</span> <span class="o">=</span> <span class="n">summarize_v2</span><span class="p">(</span><span class="n">multihop_df</span><span class="p">)</span> <span class="k">if</span> <span class="ow">not</span> <span class="n">multihop_df</span><span class="o">.</span><span class="n">empty</span> <span class="k">else</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">()</span>
+    <span class="n">multihop_domain_summary</span> <span class="o">=</span> <span class="n">summarize_v2</span><span class="p">(</span><span class="n">multihop_df</span><span class="p">,</span> <span class="n">group_cols</span><span class="o">=</span><span class="p">[</span><span class="s1">'model'</span><span class="p">,</span> <span class="s1">'domain'</span><span class="p">])</span> <span class="k">if</span> <span class="ow">not</span> <span class="n">multihop_df</span><span class="o">.</span><span class="n">empty</span> <span class="k">else</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">()</span>
+
+    <span class="n">niah_badcases</span> <span class="o">=</span> <span class="n">df</span><span class="p">[(</span><span class="n">df</span><span class="p">[</span><span class="s1">'task'</span><span class="p">]</span> <span class="o">==</span> <span class="s1">'niah'</span><span class="p">)</span> <span class="o">&amp;</span> <span class="p">(</span><span class="n">df</span><span class="p">[</span><span class="s1">'is_badcase'</span><span class="p">]</span> <span class="o">==</span> <span class="mi">1</span><span class="p">)]</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
+    <span class="n">niah_badcase_summary</span> <span class="o">=</span> <span class="n">summarize_badcase_taxonomy</span><span class="p">(</span><span class="n">niah_df</span><span class="p">)</span>
+    <span class="n">niah_badcase_summary_overall</span> <span class="o">=</span> <span class="n">summarize_badcase_taxonomy</span><span class="p">(</span><span class="n">niah_df</span><span class="p">,</span> <span class="n">group_cols</span><span class="o">=</span><span class="p">[</span><span class="s1">'badcase_taxonomy'</span><span class="p">])</span>
+    <span class="n">multihop_badcase_summary</span> <span class="o">=</span> <span class="n">summarize_badcase_taxonomy</span><span class="p">(</span><span class="n">multihop_df</span><span class="p">)</span> <span class="k">if</span> <span class="ow">not</span> <span class="n">multihop_df</span><span class="o">.</span><span class="n">empty</span> <span class="k">else</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">()</span>
+
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">niah_badcase_summary</span><span class="o">.</span><span class="n">empty</span><span class="p">:</span>
+        <span class="n">niah_badcase_summary</span><span class="p">[</span><span class="s1">'badcase_taxonomy'</span><span class="p">]</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">Categorical</span><span class="p">(</span>
+            <span class="n">niah_badcase_summary</span><span class="p">[</span><span class="s1">'badcase_taxonomy'</span><span class="p">],</span>
+            <span class="n">categories</span><span class="o">=</span><span class="n">BADCASE_DISPLAY_ORDER</span><span class="p">,</span>
+            <span class="n">ordered</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="n">niah_badcase_summary</span> <span class="o">=</span> <span class="n">niah_badcase_summary</span><span class="o">.</span><span class="n">sort_values</span><span class="p">([</span><span class="s1">'model'</span><span class="p">,</span> <span class="s1">'badcase_taxonomy'</span><span class="p">,</span> <span class="s1">'n'</span><span class="p">],</span> <span class="n">ascending</span><span class="o">=</span><span class="p">[</span><span class="kc">True</span><span class="p">,</span> <span class="kc">True</span><span class="p">,</span> <span class="kc">False</span><span class="p">])</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">niah_badcase_summary_overall</span><span class="o">.</span><span class="n">empty</span><span class="p">:</span>
+        <span class="n">niah_badcase_summary_overall</span><span class="p">[</span><span class="s1">'badcase_taxonomy'</span><span class="p">]</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">Categorical</span><span class="p">(</span>
+            <span class="n">niah_badcase_summary_overall</span><span class="p">[</span><span class="s1">'badcase_taxonomy'</span><span class="p">],</span>
+            <span class="n">categories</span><span class="o">=</span><span class="n">BADCASE_DISPLAY_ORDER</span><span class="p">,</span>
+            <span class="n">ordered</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="n">niah_badcase_summary_overall</span> <span class="o">=</span> <span class="n">niah_badcase_summary_overall</span><span class="o">.</span><span class="n">sort_values</span><span class="p">([</span><span class="s1">'badcase_taxonomy'</span><span class="p">,</span> <span class="s1">'n'</span><span class="p">],</span> <span class="n">ascending</span><span class="o">=</span><span class="p">[</span><span class="kc">True</span><span class="p">,</span> <span class="kc">False</span><span class="p">])</span>
+
+    <span class="n">taxonomy_example_cols</span> <span class="o">=</span> <span class="p">[</span>
+        <span class="s1">'model'</span><span class="p">,</span> <span class="s1">'variant'</span><span class="p">,</span> <span class="s1">'domain'</span><span class="p">,</span> <span class="s1">'context_length'</span><span class="p">,</span> <span class="s1">'depth_pct'</span><span class="p">,</span>
+        <span class="s1">'question'</span><span class="p">,</span> <span class="s1">'expected_answer'</span><span class="p">,</span> <span class="s1">'model_response'</span><span class="p">,</span> <span class="s1">'badcase_taxonomy'</span><span class="p">,</span>
+        <span class="s1">'contains_score'</span><span class="p">,</span> <span class="s1">'em_score'</span><span class="p">,</span>
+    <span class="p">]</span>
+    <span class="n">representative_badcases</span> <span class="o">=</span> <span class="p">(</span>
+        <span class="n">niah_badcases</span><span class="o">.</span><span class="n">sort_values</span><span class="p">([</span><span class="s1">'badcase_taxonomy'</span><span class="p">,</span> <span class="s1">'model'</span><span class="p">,</span> <span class="s1">'context_length'</span><span class="p">,</span> <span class="s1">'depth_pct'</span><span class="p">])</span>
+        <span class="o">.</span><span class="n">groupby</span><span class="p">(</span><span class="s1">'badcase_taxonomy'</span><span class="p">,</span> <span class="n">dropna</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+        <span class="o">.</span><span class="n">head</span><span class="p">(</span><span class="mi">3</span><span class="p">)[</span><span class="n">taxonomy_example_cols</span><span class="p">]</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">niah_badcases</span><span class="o">.</span><span class="n">empty</span> <span class="k">else</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span><span class="n">columns</span><span class="o">=</span><span class="n">taxonomy_example_cols</span><span class="p">)</span>
+    <span class="p">)</span>
+    <span class="n">em_gap_examples</span> <span class="o">=</span> <span class="p">(</span>
+        <span class="n">niah_badcases</span><span class="p">[</span><span class="n">niah_badcases</span><span class="p">[</span><span class="s1">'badcase_taxonomy'</span><span class="p">]</span> <span class="o">==</span> <span class="s1">'输出冗余但包含正确答案'</span><span class="p">]</span>
+        <span class="o">.</span><span class="n">sort_values</span><span class="p">([</span><span class="s1">'model'</span><span class="p">,</span> <span class="s1">'context_length'</span><span class="p">,</span> <span class="s1">'depth_pct'</span><span class="p">])</span>
+        <span class="p">[</span><span class="n">taxonomy_example_cols</span><span class="p">]</span>
+        <span class="o">.</span><span class="n">head</span><span class="p">(</span><span class="mi">12</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">niah_badcases</span><span class="o">.</span><span class="n">empty</span> <span class="k">else</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span><span class="n">columns</span><span class="o">=</span><span class="n">taxonomy_example_cols</span><span class="p">)</span>
+    <span class="p">)</span>
+    <span class="n">real_task_pilot_df</span> <span class="o">=</span> <span class="p">(</span>
+        <span class="n">multihop_dataset_df</span><span class="p">[</span>
+            <span class="p">[</span><span class="s1">'sample_id'</span><span class="p">,</span> <span class="s1">'domain'</span><span class="p">,</span> <span class="s1">'difficulty'</span><span class="p">,</span> <span class="s1">'hops'</span><span class="p">,</span> <span class="s1">'context_length'</span><span class="p">,</span> <span class="s1">'question'</span><span class="p">,</span> <span class="s1">'answer'</span><span class="p">]</span>
+        <span class="p">]</span><span class="o">.</span><span class="n">rename</span><span class="p">(</span><span class="n">columns</span><span class="o">=</span><span class="p">{</span><span class="s1">'answer'</span><span class="p">:</span> <span class="s1">'expected_answer'</span><span class="p">})</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">multihop_dataset_df</span><span class="o">.</span><span class="n">empty</span> <span class="k">else</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">()</span>
+    <span class="p">)</span>
+
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">task_summary</span><span class="o">.</span><span class="n">empty</span><span class="p">:</span>
+        <span class="n">task_summary</span><span class="o">.</span><span class="n">to_csv</span><span class="p">(</span><span class="n">processed_dir</span> <span class="o">/</span> <span class="s1">'summary_by_model_task.csv'</span><span class="p">,</span> <span class="n">index</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">encoding</span><span class="o">=</span><span class="s1">'utf-8-sig'</span><span class="p">)</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">niah_badcase_summary</span><span class="o">.</span><span class="n">empty</span><span class="p">:</span>
+        <span class="n">niah_badcase_summary</span><span class="o">.</span><span class="n">to_csv</span><span class="p">(</span><span class="n">processed_dir</span> <span class="o">/</span> <span class="s1">'summary_by_model_badcase_taxonomy.csv'</span><span class="p">,</span> <span class="n">index</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">encoding</span><span class="o">=</span><span class="s1">'utf-8-sig'</span><span class="p">)</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">niah_badcase_summary_overall</span><span class="o">.</span><span class="n">empty</span><span class="p">:</span>
+        <span class="n">niah_badcase_summary_overall</span><span class="o">.</span><span class="n">to_csv</span><span class="p">(</span><span class="n">processed_dir</span> <span class="o">/</span> <span class="s1">'summary_by_badcase_taxonomy.csv'</span><span class="p">,</span> <span class="n">index</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">encoding</span><span class="o">=</span><span class="s1">'utf-8-sig'</span><span class="p">)</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">representative_badcases</span><span class="o">.</span><span class="n">empty</span><span class="p">:</span>
+        <span class="n">representative_badcases</span><span class="o">.</span><span class="n">to_csv</span><span class="p">(</span><span class="n">processed_dir</span> <span class="o">/</span> <span class="s1">'badcase_examples.csv'</span><span class="p">,</span> <span class="n">index</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">encoding</span><span class="o">=</span><span class="s1">'utf-8-sig'</span><span class="p">)</span>
 
     <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s1">'✅ 加载 V2 评分结果: </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">df</span><span class="p">)</span><span class="si">}</span><span class="s1"> 条，PROJECT_ROOT=</span><span class="si">{</span><span class="n">PROJECT_ROOT</span><span class="si">}</span><span class="s1">'</span><span class="p">)</span>
     <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s1">'   模型: </span><span class="si">{</span><span class="n">model_labels</span><span class="si">}</span><span class="s1">'</span><span class="p">)</span>
@@ -7922,7 +8004,7 @@ a.anchor-link {
     <span class="k">if</span> <span class="n">repeat_estimate</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
         <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s1">'   估计重复数: </span><span class="si">{</span><span class="n">repeat_estimate</span><span class="si">}</span><span class="s1">'</span><span class="p">)</span>
     <span class="k">if</span> <span class="ow">not</span> <span class="n">multihop_df</span><span class="o">.</span><span class="n">empty</span><span class="p">:</span>
-        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s1">'   multi_hop 结果: </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">multihop_df</span><span class="p">)</span><span class="si">}</span><span class="s1"> 条'</span><span class="p">)</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s1">'   multi_hop 结果: </span><span class="si">{</span><span class="n">actual_multihop_total</span><span class="si">}</span><span class="s1">/</span><span class="si">{</span><span class="n">expected_multihop_total</span><span class="si">}</span><span class="s1"> (</span><span class="si">{</span><span class="n">multihop_coverage_pct</span><span class="si">:</span><span class="s1">.1f</span><span class="si">}</span><span class="s1">%)'</span><span class="p">)</span>
     <span class="k">elif</span> <span class="ow">not</span> <span class="n">multihop_dataset_df</span><span class="o">.</span><span class="n">empty</span><span class="p">:</span>
         <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s1">'   multi_hop 数据集已准备: </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">multihop_dataset_df</span><span class="p">)</span><span class="si">}</span><span class="s1"> 条，当前尚未评测'</span><span class="p">)</span>
 <span class="k">else</span><span class="p">:</span>
@@ -7939,11 +8021,11 @@ a.anchor-link {
 <div class="jp-OutputArea-child">
 <div class="jp-OutputPrompt jp-OutputArea-prompt"></div>
 <div class="jp-RenderedText jp-OutputArea-output" data-mime-type="text/plain" tabindex="0">
-<pre>✅ 加载 V2 评分结果: 1050 条，PROJECT_ROOT=/Users/melody/Desktop/Eval
+<pre>✅ 加载 V2 评分结果: 1062 条，PROJECT_ROOT=/Users/melody/Desktop/Eval
    模型: ['DeepSeek-V3 (API: deepseek-chat)', 'Kimi (Moonshot, API: moonshot-v1-128k)', 'Qwen-Long (API: qwen-long)']
    NIAH 覆盖率: 100.0% (1050/1050)
    估计重复数: 10
-   multi_hop 数据集已准备: 4 条，当前尚未评测
+   multi_hop 结果: 12/12 (100.0%)
 </pre>
 </div>
 </div>
@@ -7972,7 +8054,10 @@ a.anchor-link {
     <span class="nb">print</span><span class="p">(</span><span class="s1">'实验规模：'</span><span class="p">)</span>
     <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s1">'  已完成 NIAH 样本数:  </span><span class="si">{</span><span class="n">actual_niah_total</span><span class="si">}</span><span class="s1">'</span><span class="p">)</span>
     <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s1">'  期望 NIAH 样本数:    </span><span class="si">{</span><span class="n">expected_niah_total</span><span class="si">}</span><span class="s1">'</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s1">'  覆盖率:              </span><span class="si">{</span><span class="n">coverage_pct</span><span class="si">:</span><span class="s1">.1f</span><span class="si">}</span><span class="s1">%'</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s1">'  NIAH 覆盖率:         </span><span class="si">{</span><span class="n">coverage_pct</span><span class="si">:</span><span class="s1">.1f</span><span class="si">}</span><span class="s1">%'</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s1">'  已完成 multi_hop:    </span><span class="si">{</span><span class="n">actual_multihop_total</span><span class="si">}</span><span class="s1">'</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s1">'  期望 multi_hop:      </span><span class="si">{</span><span class="n">expected_multihop_total</span><span class="si">}</span><span class="s1">'</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s1">'  multi_hop 覆盖率:    </span><span class="si">{</span><span class="n">multihop_coverage_pct</span><span class="si">:</span><span class="s1">.1f</span><span class="si">}</span><span class="s1">%'</span><span class="p">)</span>
     <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s1">'  评测模型:            </span><span class="si">{</span><span class="n">model_labels</span><span class="si">}</span><span class="s1">'</span><span class="p">)</span>
     <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s1">'  变体:                </span><span class="si">{</span><span class="n">variants</span><span class="si">}</span><span class="s1">'</span><span class="p">)</span>
     <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s1">'  领域:                </span><span class="si">{</span><span class="n">domains</span><span class="si">}</span><span class="s1">'</span><span class="p">)</span>
@@ -8002,13 +8087,16 @@ a.anchor-link {
 <pre>实验规模：
   已完成 NIAH 样本数:  1050
   期望 NIAH 样本数:    1050
-  覆盖率:              100.0%
+  NIAH 覆盖率:         100.0%
+  已完成 multi_hop:    12
+  期望 multi_hop:      12
+  multi_hop 覆盖率:    100.0%
   评测模型:            ['DeepSeek-V3 (API: deepseek-chat)', 'Kimi (Moonshot, API: moonshot-v1-128k)', 'Qwen-Long (API: qwen-long)']
   变体:                ['multi_key', 'numeric_confusable', 'style_aligned']
   领域:                ['finance', 'healthcare', 'logistics', 'manufacturing', 'retail']
   上下文长度:          [2000, 4000, 8000, 16000, 32000] chars
-  Needle 深度点:       [0, 10, 25, 50, 75, 90, 100]%
-  task:                ['niah']
+  Needle 深度点:       [0.0, 10.0, 25.0, 50.0, 75.0, 90.0, 100.0]%
+  task:                ['multi_hop', 'niah']
   估计重复数:          10
 
 当前覆盖数（model x context_length）：
@@ -8555,6 +8643,107 @@ Qwen-Long (API: qwen-long)                 70     70     70     70     70
 </div>
 </div>
 </div>
+<div class="jp-OutputArea-child">
+<div class="jp-OutputPrompt jp-OutputArea-prompt"></div>
+<div class="jp-RenderedText jp-OutputArea-output" data-mime-type="text/plain" tabindex="0">
+<pre>扩展任务摘要：
+</pre>
+</div>
+</div>
+<div class="jp-OutputArea-child">
+<div class="jp-OutputPrompt jp-OutputArea-prompt"></div>
+<div class="jp-RenderedHTMLCommon jp-RenderedHTML jp-OutputArea-output" data-mime-type="text/html" tabindex="0">
+<div>
+<style scoped="">
+    .dataframe tbody tr th:only-of-type {
+        vertical-align: middle;
+    }
+
+    .dataframe tbody tr th {
+        vertical-align: top;
+    }
+
+    .dataframe thead th {
+        text-align: right;
+    }
+</style>
+<table border="1" class="dataframe">
+<thead>
+<tr style="text-align: right;">
+<th></th>
+<th>model</th>
+<th>task</th>
+<th>n</th>
+<th>em_pct</th>
+<th>contains_pct</th>
+<th>contains_ci_low_pct</th>
+<th>contains_ci_high_pct</th>
+<th>avg_latency_s</th>
+<th>avg_response_chars</th>
+<th>avg_completion_tokens</th>
+<th>total_cost_cny</th>
+<th>cost_per_contains_hit_cny</th>
+<th>cost_per_em_hit_cny</th>
+<th>contains_per_1k_output_tokens</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<th>0</th>
+<td>DeepSeek-V3 (API: deepseek-chat)</td>
+<td>multi_hop</td>
+<td>4</td>
+<td>50.0</td>
+<td>50.0</td>
+<td>15.0</td>
+<td>85.0</td>
+<td>0.66</td>
+<td>5.2</td>
+<td>3.2</td>
+<td>0.0005</td>
+<td>0.0002</td>
+<td>0.0002</td>
+<td>145.83</td>
+</tr>
+<tr>
+<th>2</th>
+<td>Kimi (Moonshot, API: moonshot-v1-128k)</td>
+<td>multi_hop</td>
+<td>4</td>
+<td>25.0</td>
+<td>50.0</td>
+<td>15.0</td>
+<td>85.0</td>
+<td>0.64</td>
+<td>8.5</td>
+<td>7.2</td>
+<td>0.0312</td>
+<td>0.0156</td>
+<td>0.0312</td>
+<td>62.50</td>
+</tr>
+<tr>
+<th>4</th>
+<td>Qwen-Long (API: qwen-long)</td>
+<td>multi_hop</td>
+<td>4</td>
+<td>50.0</td>
+<td>50.0</td>
+<td>15.0</td>
+<td>85.0</td>
+<td>0.51</td>
+<td>5.0</td>
+<td>4.8</td>
+<td>0.0020</td>
+<td>0.0010</td>
+<td>0.0010</td>
+<td>100.00</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+</div>
 </div>
 </div>
 </div>
@@ -8729,6 +8918,1432 @@ Qwen-Long (API: qwen-long)                 70     70     70     70     70
 </div>
 </div>
 </div>
+</div><div class="jp-Cell jp-CodeCell jp-Notebook-cell" id="cell-id=c4b4ccb7">
+<div class="jp-Cell-inputWrapper" tabindex="0">
+<div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
+</div>
+<div class="jp-InputArea jp-Cell-inputArea">
+<div class="jp-InputPrompt jp-InputArea-prompt">In [7]:</div>
+<div class="jp-CodeMirrorEditor jp-Editor jp-InputArea-editor" data-type="inline">
+<div class="cm-editor cm-s-jupyter">
+<div class="highlight hl-ipython3"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">IPython.display</span><span class="w"> </span><span class="kn">import</span> <span class="n">Markdown</span><span class="p">,</span> <span class="n">display</span>
+
+<span class="k">if</span> <span class="n">scored_path</span><span class="o">.</span><span class="n">exists</span><span class="p">():</span>
+    <span class="n">display</span><span class="p">(</span><span class="n">Markdown</span><span class="p">(</span><span class="s1">'## 6. Badcase Taxonomy'</span><span class="p">))</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">niah_badcase_summary_overall</span><span class="o">.</span><span class="n">empty</span><span class="p">:</span>
+        <span class="nb">print</span><span class="p">(</span><span class="s1">'整体 badcase taxonomy（包含 Contains miss 与 EM-only miss）：'</span><span class="p">)</span>
+        <span class="n">overall_taxonomy_display</span> <span class="o">=</span> <span class="n">niah_badcase_summary_overall</span><span class="o">.</span><span class="n">sort_values</span><span class="p">(</span><span class="s1">'n'</span><span class="p">,</span> <span class="n">ascending</span><span class="o">=</span><span class="kc">False</span><span class="p">)[[</span><span class="s1">'badcase_taxonomy'</span><span class="p">,</span> <span class="s1">'n'</span><span class="p">,</span> <span class="s1">'share_pct'</span><span class="p">]]</span>
+        <span class="n">display</span><span class="p">(</span><span class="n">overall_taxonomy_display</span><span class="p">)</span>
+
+        <span class="n">taxonomy_pivot</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="n">with_model_labels</span><span class="p">(</span><span class="n">niah_badcase_summary</span><span class="p">[[</span><span class="s1">'model'</span><span class="p">,</span> <span class="s1">'badcase_taxonomy'</span><span class="p">,</span> <span class="s1">'n'</span><span class="p">]])</span>
+            <span class="o">.</span><span class="n">pivot</span><span class="p">(</span><span class="n">index</span><span class="o">=</span><span class="s1">'model'</span><span class="p">,</span> <span class="n">columns</span><span class="o">=</span><span class="s1">'badcase_taxonomy'</span><span class="p">,</span> <span class="n">values</span><span class="o">=</span><span class="s1">'n'</span><span class="p">)</span>
+            <span class="o">.</span><span class="n">fillna</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+            <span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="nb">int</span><span class="p">)</span>
+        <span class="p">)</span>
+        <span class="n">ordered_cols</span> <span class="o">=</span> <span class="p">[</span><span class="n">col</span> <span class="k">for</span> <span class="n">col</span> <span class="ow">in</span> <span class="n">BADCASE_DISPLAY_ORDER</span> <span class="k">if</span> <span class="n">col</span> <span class="ow">in</span> <span class="n">taxonomy_pivot</span><span class="o">.</span><span class="n">columns</span><span class="p">]</span>
+        <span class="n">ordered_cols</span> <span class="o">+=</span> <span class="p">[</span><span class="n">col</span> <span class="k">for</span> <span class="n">col</span> <span class="ow">in</span> <span class="n">taxonomy_pivot</span><span class="o">.</span><span class="n">columns</span> <span class="k">if</span> <span class="n">col</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">ordered_cols</span><span class="p">]</span>
+        <span class="n">taxonomy_pivot</span> <span class="o">=</span> <span class="n">taxonomy_pivot</span><span class="p">[</span><span class="n">ordered_cols</span><span class="p">]</span>
+
+        <span class="nb">print</span><span class="p">(</span><span class="s1">'按模型拆分：'</span><span class="p">)</span>
+        <span class="n">display</span><span class="p">(</span><span class="n">taxonomy_pivot</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">taxonomy_pivot</span><span class="o">.</span><span class="n">empty</span><span class="p">:</span>
+            <span class="n">ax</span> <span class="o">=</span> <span class="n">taxonomy_pivot</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">kind</span><span class="o">=</span><span class="s1">'barh'</span><span class="p">,</span> <span class="n">stacked</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">figsize</span><span class="o">=</span><span class="p">(</span><span class="mi">11</span><span class="p">,</span> <span class="mi">4</span><span class="p">),</span> <span class="n">colormap</span><span class="o">=</span><span class="s1">'tab20c'</span><span class="p">)</span>
+            <span class="n">ax</span><span class="o">.</span><span class="n">set_title</span><span class="p">(</span><span class="s1">'NIAH badcase taxonomy by model'</span><span class="p">)</span>
+            <span class="n">ax</span><span class="o">.</span><span class="n">set_xlabel</span><span class="p">(</span><span class="s1">'样本数'</span><span class="p">)</span>
+            <span class="n">ax</span><span class="o">.</span><span class="n">set_ylabel</span><span class="p">(</span><span class="s1">'模型'</span><span class="p">)</span>
+            <span class="n">ax</span><span class="o">.</span><span class="n">legend</span><span class="p">(</span><span class="n">title</span><span class="o">=</span><span class="s1">'错误类型'</span><span class="p">,</span> <span class="n">bbox_to_anchor</span><span class="o">=</span><span class="p">(</span><span class="mf">1.02</span><span class="p">,</span> <span class="mi">1</span><span class="p">),</span> <span class="n">loc</span><span class="o">=</span><span class="s1">'upper left'</span><span class="p">)</span>
+            <span class="n">plt</span><span class="o">.</span><span class="n">tight_layout</span><span class="p">()</span>
+            <span class="n">plt</span><span class="o">.</span><span class="n">show</span><span class="p">()</span>
+
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">representative_badcases</span><span class="o">.</span><span class="n">empty</span><span class="p">:</span>
+        <span class="nb">print</span><span class="p">(</span><span class="s1">'每类 1 条代表性失败样本：'</span><span class="p">)</span>
+        <span class="n">report_badcase_examples</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="n">representative_badcases</span><span class="o">.</span><span class="n">groupby</span><span class="p">(</span><span class="s1">'badcase_taxonomy'</span><span class="p">,</span> <span class="n">dropna</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+            <span class="o">.</span><span class="n">head</span><span class="p">(</span><span class="mi">1</span><span class="p">)[[</span><span class="s1">'badcase_taxonomy'</span><span class="p">,</span> <span class="s1">'model'</span><span class="p">,</span> <span class="s1">'variant'</span><span class="p">,</span> <span class="s1">'question'</span><span class="p">,</span> <span class="s1">'expected_answer'</span><span class="p">,</span> <span class="s1">'model_response'</span><span class="p">]]</span>
+        <span class="p">)</span>
+        <span class="n">display</span><span class="p">(</span><span class="n">with_model_labels</span><span class="p">(</span><span class="n">report_badcase_examples</span><span class="p">))</span>
+
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">em_gap_examples</span><span class="o">.</span><span class="n">empty</span><span class="p">:</span>
+        <span class="nb">print</span><span class="p">(</span><span class="s1">'EM miss 但 Contains hit 的典型样本：'</span><span class="p">)</span>
+        <span class="n">display</span><span class="p">(</span><span class="n">with_model_labels</span><span class="p">(</span><span class="n">em_gap_examples</span><span class="p">[[</span><span class="s1">'model'</span><span class="p">,</span> <span class="s1">'variant'</span><span class="p">,</span> <span class="s1">'question'</span><span class="p">,</span> <span class="s1">'expected_answer'</span><span class="p">,</span> <span class="s1">'model_response'</span><span class="p">]]</span><span class="o">.</span><span class="n">head</span><span class="p">(</span><span class="mi">8</span><span class="p">)))</span>
+
+    <span class="n">display</span><span class="p">(</span><span class="n">Markdown</span><span class="p">(</span><span class="s1">'## 7. multi-hop 正式结果与真实任务口径 Pilot'</span><span class="p">))</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">task_summary</span><span class="o">.</span><span class="n">empty</span><span class="p">:</span>
+        <span class="nb">print</span><span class="p">(</span><span class="s1">'任务级对比：'</span><span class="p">)</span>
+        <span class="n">task_display</span> <span class="o">=</span> <span class="n">with_model_labels</span><span class="p">(</span><span class="n">task_summary</span><span class="p">)</span><span class="o">.</span><span class="n">sort_values</span><span class="p">([</span><span class="s1">'task'</span><span class="p">,</span> <span class="s1">'contains_pct'</span><span class="p">],</span> <span class="n">ascending</span><span class="o">=</span><span class="p">[</span><span class="kc">True</span><span class="p">,</span> <span class="kc">False</span><span class="p">])</span>
+        <span class="n">display</span><span class="p">(</span><span class="n">task_display</span><span class="p">)</span>
+
+        <span class="n">task_pivot</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="n">with_model_labels</span><span class="p">(</span><span class="n">task_summary</span><span class="p">[[</span><span class="s1">'model'</span><span class="p">,</span> <span class="s1">'task'</span><span class="p">,</span> <span class="s1">'contains_pct'</span><span class="p">]])</span>
+            <span class="o">.</span><span class="n">pivot</span><span class="p">(</span><span class="n">index</span><span class="o">=</span><span class="s1">'model'</span><span class="p">,</span> <span class="n">columns</span><span class="o">=</span><span class="s1">'task'</span><span class="p">,</span> <span class="n">values</span><span class="o">=</span><span class="s1">'contains_pct'</span><span class="p">)</span>
+            <span class="o">.</span><span class="n">round</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
+        <span class="p">)</span>
+        <span class="n">display</span><span class="p">(</span><span class="n">task_pivot</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">task_pivot</span><span class="o">.</span><span class="n">empty</span><span class="p">:</span>
+            <span class="n">ax</span> <span class="o">=</span> <span class="n">task_pivot</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">kind</span><span class="o">=</span><span class="s1">'barh'</span><span class="p">,</span> <span class="n">figsize</span><span class="o">=</span><span class="p">(</span><span class="mi">10</span><span class="p">,</span> <span class="mi">4</span><span class="p">),</span> <span class="n">color</span><span class="o">=</span><span class="p">[</span><span class="s1">'#3b82f6'</span><span class="p">,</span> <span class="s1">'#f59e0b'</span><span class="p">])</span>
+            <span class="n">ax</span><span class="o">.</span><span class="n">set_title</span><span class="p">(</span><span class="s1">'NIAH vs multi-hop Contains'</span><span class="p">)</span>
+            <span class="n">ax</span><span class="o">.</span><span class="n">set_xlabel</span><span class="p">(</span><span class="s1">'Contains (%)'</span><span class="p">)</span>
+            <span class="n">ax</span><span class="o">.</span><span class="n">set_ylabel</span><span class="p">(</span><span class="s1">'模型'</span><span class="p">)</span>
+            <span class="n">ax</span><span class="o">.</span><span class="n">legend</span><span class="p">(</span><span class="n">title</span><span class="o">=</span><span class="s1">'任务'</span><span class="p">)</span>
+            <span class="n">plt</span><span class="o">.</span><span class="n">tight_layout</span><span class="p">()</span>
+            <span class="n">plt</span><span class="o">.</span><span class="n">show</span><span class="p">()</span>
+
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">multihop_summary</span><span class="o">.</span><span class="n">empty</span><span class="p">:</span>
+        <span class="nb">print</span><span class="p">(</span><span class="s1">'multi_hop 汇总：'</span><span class="p">)</span>
+        <span class="n">display</span><span class="p">(</span><span class="n">with_model_labels</span><span class="p">(</span><span class="n">multihop_summary</span><span class="p">))</span>
+
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">multihop_domain_summary</span><span class="o">.</span><span class="n">empty</span><span class="p">:</span>
+            <span class="nb">print</span><span class="p">(</span><span class="s1">'按领域拆分：'</span><span class="p">)</span>
+            <span class="n">display</span><span class="p">(</span>
+                <span class="n">with_model_labels</span><span class="p">(</span>
+                    <span class="n">multihop_domain_summary</span><span class="p">[</span>
+                        <span class="p">[</span><span class="s1">'model'</span><span class="p">,</span> <span class="s1">'domain'</span><span class="p">,</span> <span class="s1">'n'</span><span class="p">,</span> <span class="s1">'em_pct'</span><span class="p">,</span> <span class="s1">'contains_pct'</span><span class="p">,</span> <span class="s1">'contains_ci_low_pct'</span><span class="p">,</span> <span class="s1">'contains_ci_high_pct'</span><span class="p">]</span>
+                    <span class="p">]</span><span class="o">.</span><span class="n">sort_values</span><span class="p">([</span><span class="s1">'domain'</span><span class="p">,</span> <span class="s1">'contains_pct'</span><span class="p">],</span> <span class="n">ascending</span><span class="o">=</span><span class="p">[</span><span class="kc">True</span><span class="p">,</span> <span class="kc">False</span><span class="p">])</span>
+                <span class="p">)</span>
+            <span class="p">)</span>
+
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">multihop_badcase_summary</span><span class="o">.</span><span class="n">empty</span><span class="p">:</span>
+            <span class="nb">print</span><span class="p">(</span><span class="s1">'multi_hop badcase taxonomy：'</span><span class="p">)</span>
+            <span class="n">display</span><span class="p">(</span><span class="n">with_model_labels</span><span class="p">(</span><span class="n">multihop_badcase_summary</span><span class="p">))</span>
+
+        <span class="nb">print</span><span class="p">(</span><span class="s1">'multi_hop 逐条结果：'</span><span class="p">)</span>
+        <span class="n">display</span><span class="p">(</span>
+            <span class="n">with_model_labels</span><span class="p">(</span>
+                <span class="n">multihop_df</span><span class="p">[</span>
+                    <span class="p">[</span><span class="s1">'model'</span><span class="p">,</span> <span class="s1">'domain'</span><span class="p">,</span> <span class="s1">'difficulty'</span><span class="p">,</span> <span class="s1">'question'</span><span class="p">,</span> <span class="s1">'expected_answer'</span><span class="p">,</span> <span class="s1">'model_response'</span><span class="p">,</span> <span class="s1">'contains_score'</span><span class="p">,</span> <span class="s1">'badcase_taxonomy'</span><span class="p">]</span>
+                <span class="p">]</span><span class="o">.</span><span class="n">sort_values</span><span class="p">([</span><span class="s1">'model'</span><span class="p">,</span> <span class="s1">'domain'</span><span class="p">])</span>
+            <span class="p">)</span>
+        <span class="p">)</span>
+        <span class="nb">print</span><span class="p">(</span><span class="s1">'当前 multi_hop 只有 4 条人工设计的真实业务口径样本 / 模型，95% CI 仍然很宽，应把它视为已经正式纳入统一报告的 pilot slice，而不是最终排名。'</span><span class="p">)</span>
+
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">real_task_pilot_df</span><span class="o">.</span><span class="n">empty</span><span class="p">:</span>
+        <span class="nb">print</span><span class="p">(</span><span class="s1">'当前真实任务口径 pilot 样本：'</span><span class="p">)</span>
+        <span class="n">display</span><span class="p">(</span><span class="n">real_task_pilot_df</span><span class="p">)</span>
+
+    <span class="n">real_task_roadmap</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span>
+        <span class="p">[</span>
+            <span class="p">{</span>
+                <span class="s1">'subset'</span><span class="p">:</span> <span class="s1">'长文档关键信息抽取'</span><span class="p">,</span>
+                <span class="s1">'target_samples'</span><span class="p">:</span> <span class="mi">12</span><span class="p">,</span>
+                <span class="s1">'design_goal'</span><span class="p">:</span> <span class="s1">'验证模型在长文档里定位并抽取关键数值/时间/实体的能力'</span><span class="p">,</span>
+            <span class="p">},</span>
+            <span class="p">{</span>
+                <span class="s1">'subset'</span><span class="p">:</span> <span class="s1">'中文财报 / 研报问答'</span><span class="p">,</span>
+                <span class="s1">'target_samples'</span><span class="p">:</span> <span class="mi">10</span><span class="p">,</span>
+                <span class="s1">'design_goal'</span><span class="p">:</span> <span class="s1">'验证模型能否在多指标并列时锁定目标财务口径'</span><span class="p">,</span>
+            <span class="p">},</span>
+            <span class="p">{</span>
+                <span class="s1">'subset'</span><span class="p">:</span> <span class="s1">'多段政策文本比对'</span><span class="p">,</span>
+                <span class="s1">'target_samples'</span><span class="p">:</span> <span class="mi">8</span><span class="p">,</span>
+                <span class="s1">'design_goal'</span><span class="p">:</span> <span class="s1">'验证跨段落条件对齐、例外条款识别和版本差异判断'</span><span class="p">,</span>
+            <span class="p">},</span>
+            <span class="p">{</span>
+                <span class="s1">'subset'</span><span class="p">:</span> <span class="s1">'客服知识库长上下文检索问答'</span><span class="p">,</span>
+                <span class="s1">'target_samples'</span><span class="p">:</span> <span class="mi">10</span><span class="p">,</span>
+                <span class="s1">'design_goal'</span><span class="p">:</span> <span class="s1">'验证真实 FAQ / SOP 语料里的检索定位与简洁作答'</span><span class="p">,</span>
+            <span class="p">},</span>
+        <span class="p">]</span>
+    <span class="p">)</span>
+    <span class="n">real_task_roadmap</span><span class="o">.</span><span class="n">to_csv</span><span class="p">(</span><span class="n">processed_dir</span> <span class="o">/</span> <span class="s1">'real_task_subset_roadmap.csv'</span><span class="p">,</span> <span class="n">index</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">encoding</span><span class="o">=</span><span class="s1">'utf-8-sig'</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s1">'真实任务子集扩充路线：'</span><span class="p">)</span>
+    <span class="n">display</span><span class="p">(</span><span class="n">real_task_roadmap</span><span class="p">)</span>
+
+    <span class="n">display</span><span class="p">(</span><span class="n">Markdown</span><span class="p">(</span><span class="s1">'## 8. 优化建议与数据策略'</span><span class="p">))</span>
+    <span class="n">recommendations</span> <span class="o">=</span> <span class="p">[]</span>
+
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">variant_summary</span><span class="o">.</span><span class="n">empty</span><span class="p">:</span>
+        <span class="n">variant_order</span> <span class="o">=</span> <span class="n">variant_summary</span><span class="o">.</span><span class="n">groupby</span><span class="p">(</span><span class="s1">'variant'</span><span class="p">)[</span><span class="s1">'contains_pct'</span><span class="p">]</span><span class="o">.</span><span class="n">mean</span><span class="p">()</span><span class="o">.</span><span class="n">sort_values</span><span class="p">()</span>
+        <span class="n">hardest_variant</span> <span class="o">=</span> <span class="n">variant_order</span><span class="o">.</span><span class="n">index</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+        <span class="n">hardest_variant_score</span> <span class="o">=</span> <span class="n">variant_order</span><span class="o">.</span><span class="n">iloc</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+        <span class="n">recommendations</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s1">'</span><span class="si">{</span><span class="n">hardest_variant</span><span class="si">}</span><span class="s1"> 当前平均 Contains 最低 (</span><span class="si">{</span><span class="n">hardest_variant_score</span><span class="si">:</span><span class="s1">.1f</span><span class="si">}</span><span class="s1">%)，说明模型对相似数字 / 相邻口径区分仍弱，下一轮应补更多相似数值干扰样本，并把数字单位、时间、百分比混排进同一段上下文。'</span>
+        <span class="p">)</span>
+
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">length_summary</span><span class="o">.</span><span class="n">empty</span><span class="p">:</span>
+        <span class="n">kimi_32k</span> <span class="o">=</span> <span class="n">length_summary</span><span class="p">[(</span><span class="n">length_summary</span><span class="p">[</span><span class="s1">'model'</span><span class="p">]</span> <span class="o">==</span> <span class="s1">'kimi'</span><span class="p">)</span> <span class="o">&amp;</span> <span class="p">(</span><span class="n">length_summary</span><span class="p">[</span><span class="s1">'context_length'</span><span class="p">]</span> <span class="o">==</span> <span class="mi">32000</span><span class="p">)]</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">kimi_32k</span><span class="o">.</span><span class="n">empty</span><span class="p">:</span>
+            <span class="n">kimi_row</span> <span class="o">=</span> <span class="n">kimi_32k</span><span class="o">.</span><span class="n">iloc</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+            <span class="n">recommendations</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+                <span class="s1">'Kimi 在 32K 下出现近似崩塌，Contains=</span><span class="si">%.1f%%</span><span class="s1">，95</span><span class="si">%%</span><span class="s1"> CI=[</span><span class="si">%.1f</span><span class="s1">, </span><span class="si">%.1f</span><span class="s1">]，优先排查长上下文 prompt 模板、截断策略、以及模型是否稳定输出空响应。'</span>
+                <span class="o">%</span> <span class="p">(</span><span class="n">kimi_row</span><span class="p">[</span><span class="s1">'contains_pct'</span><span class="p">],</span> <span class="n">kimi_row</span><span class="p">[</span><span class="s1">'contains_ci_low_pct'</span><span class="p">],</span> <span class="n">kimi_row</span><span class="p">[</span><span class="s1">'contains_ci_high_pct'</span><span class="p">])</span>
+            <span class="p">)</span>
+
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">model_summary</span><span class="o">.</span><span class="n">empty</span><span class="p">:</span>
+        <span class="n">deepseek_row</span> <span class="o">=</span> <span class="n">model_summary</span><span class="p">[</span><span class="n">model_summary</span><span class="p">[</span><span class="s1">'model'</span><span class="p">]</span> <span class="o">==</span> <span class="s1">'deepseek'</span><span class="p">]</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">deepseek_row</span><span class="o">.</span><span class="n">empty</span><span class="p">:</span>
+            <span class="n">deepseek_gap</span> <span class="o">=</span> <span class="n">deepseek_row</span><span class="o">.</span><span class="n">iloc</span><span class="p">[</span><span class="mi">0</span><span class="p">][</span><span class="s1">'contains_pct'</span><span class="p">]</span> <span class="o">-</span> <span class="n">deepseek_row</span><span class="o">.</span><span class="n">iloc</span><span class="p">[</span><span class="mi">0</span><span class="p">][</span><span class="s1">'em_pct'</span><span class="p">]</span>
+            <span class="n">recommendations</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+                <span class="s1">'DeepSeek 的 Contains 明显高于 EM，gap=</span><span class="si">%.1f</span><span class="s1">pp，说明定位能力已经足够，但抽取格式仍不够稳定；下一轮应补格式约束、短答案 extraction-style prompt，以及更多“只返回目标值”的训练样本。'</span>
+                <span class="o">%</span> <span class="n">deepseek_gap</span>
+            <span class="p">)</span>
+
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">multihop_summary</span><span class="o">.</span><span class="n">empty</span><span class="p">:</span>
+        <span class="n">recommendations</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+            <span class="s1">'multi-hop 已正式进入统一报告，但当前每模型只有 4 条样本，Contains 全部停在 50.0</span><span class="si">%%</span><span class="s1">。下一步应把 real-task slice 扩到 30-50 条，并把中间推理链、单位换算、时间约束等失败模式单独标注。'</span>
+        <span class="p">)</span>
+
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">niah_badcase_summary_overall</span><span class="o">.</span><span class="n">empty</span><span class="p">:</span>
+        <span class="n">top_badcase</span> <span class="o">=</span> <span class="n">niah_badcase_summary_overall</span><span class="o">.</span><span class="n">sort_values</span><span class="p">(</span><span class="s1">'n'</span><span class="p">,</span> <span class="n">ascending</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span><span class="o">.</span><span class="n">iloc</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+        <span class="n">recommendations</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+            <span class="s1">'当前最常见的 badcase 类型是“</span><span class="si">%s</span><span class="s1">”（</span><span class="si">%.1f%%</span><span class="s1">）。这意味着后续优化不能只盯整体准确率，还需要把该类样本单独做回归集。'</span>
+            <span class="o">%</span> <span class="p">(</span><span class="n">top_badcase</span><span class="p">[</span><span class="s1">'badcase_taxonomy'</span><span class="p">],</span> <span class="n">top_badcase</span><span class="p">[</span><span class="s1">'share_pct'</span><span class="p">])</span>
+        <span class="p">)</span>
+
+    <span class="k">for</span> <span class="n">idx</span><span class="p">,</span> <span class="n">recommendation</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">recommendations</span><span class="p">,</span> <span class="n">start</span><span class="o">=</span><span class="mi">1</span><span class="p">):</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s1">'</span><span class="si">{</span><span class="n">idx</span><span class="si">}</span><span class="s1">. </span><span class="si">{</span><span class="n">recommendation</span><span class="si">}</span><span class="s1">'</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+</div>
+</div>
+<div class="jp-Cell-outputWrapper">
+<div class="jp-Collapser jp-OutputCollapser jp-Cell-outputCollapser">
+</div>
+<div class="jp-OutputArea jp-Cell-outputArea">
+<div class="jp-OutputArea-child">
+<div class="jp-OutputPrompt jp-OutputArea-prompt"></div>
+<div class="jp-RenderedHTMLCommon jp-RenderedMarkdown jp-OutputArea-output" data-mime-type="text/markdown" tabindex="0">
+<h2 id="6.-Badcase-Taxonomy">6. Badcase Taxonomy<a class="anchor-link" href="#6.-Badcase-Taxonomy">¶</a></h2>
+</div>
+</div>
+<div class="jp-OutputArea-child">
+<div class="jp-OutputPrompt jp-OutputArea-prompt"></div>
+<div class="jp-RenderedText jp-OutputArea-output" data-mime-type="text/plain" tabindex="0">
+<pre>整体 badcase taxonomy（包含 Contains miss 与 EM-only miss）：
+</pre>
+</div>
+</div>
+<div class="jp-OutputArea-child">
+<div class="jp-OutputPrompt jp-OutputArea-prompt"></div>
+<div class="jp-RenderedHTMLCommon jp-RenderedHTML jp-OutputArea-output" data-mime-type="text/html" tabindex="0">
+<div>
+<style scoped="">
+    .dataframe tbody tr th:only-of-type {
+        vertical-align: middle;
+    }
+
+    .dataframe tbody tr th {
+        vertical-align: top;
+    }
+
+    .dataframe thead th {
+        text-align: right;
+    }
+</style>
+<table border="1" class="dataframe">
+<thead>
+<tr style="text-align: right;">
+<th></th>
+<th>badcase_taxonomy</th>
+<th>n</th>
+<th>share_pct</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<th>4</th>
+<td>输出冗余但包含正确答案</td>
+<td>123</td>
+<td>35.1</td>
+</tr>
+<tr>
+<th>3</th>
+<td>被相似数字干扰</td>
+<td>112</td>
+<td>32.0</td>
+</tr>
+<tr>
+<th>0</th>
+<td>多 key 条件下定位失败</td>
+<td>61</td>
+<td>17.4</td>
+</tr>
+<tr>
+<th>1</th>
+<td>未作答或信息未命中</td>
+<td>28</td>
+<td>8.0</td>
+</tr>
+<tr>
+<th>2</th>
+<td>深层位置召回失败</td>
+<td>26</td>
+<td>7.4</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+</div>
+<div class="jp-OutputArea-child">
+<div class="jp-OutputPrompt jp-OutputArea-prompt"></div>
+<div class="jp-RenderedText jp-OutputArea-output" data-mime-type="text/plain" tabindex="0">
+<pre>按模型拆分：
+</pre>
+</div>
+</div>
+<div class="jp-OutputArea-child">
+<div class="jp-OutputPrompt jp-OutputArea-prompt"></div>
+<div class="jp-RenderedHTMLCommon jp-RenderedHTML jp-OutputArea-output" data-mime-type="text/html" tabindex="0">
+<div>
+<style scoped="">
+    .dataframe tbody tr th:only-of-type {
+        vertical-align: middle;
+    }
+
+    .dataframe tbody tr th {
+        vertical-align: top;
+    }
+
+    .dataframe thead th {
+        text-align: right;
+    }
+</style>
+<table border="1" class="dataframe">
+<thead>
+<tr style="text-align: right;">
+<th>badcase_taxonomy</th>
+<th>被相似数字干扰</th>
+<th>深层位置召回失败</th>
+<th>输出冗余但包含正确答案</th>
+<th>多 key 条件下定位失败</th>
+<th>未作答或信息未命中</th>
+</tr>
+<tr>
+<th>model</th>
+<th></th>
+<th></th>
+<th></th>
+<th></th>
+<th></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<th>DeepSeek-V3 (API: deepseek-chat)</th>
+<td>16</td>
+<td>4</td>
+<td>103</td>
+<td>10</td>
+<td>3</td>
+</tr>
+<tr>
+<th>Kimi (Moonshot, API: moonshot-v1-128k)</th>
+<td>53</td>
+<td>16</td>
+<td>15</td>
+<td>41</td>
+<td>19</td>
+</tr>
+<tr>
+<th>Qwen-Long (API: qwen-long)</th>
+<td>43</td>
+<td>6</td>
+<td>5</td>
+<td>10</td>
+<td>6</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+</div>
+<div class="jp-OutputArea-child">
+<div class="jp-OutputPrompt jp-OutputArea-prompt"></div>
+<div class="jp-RenderedImage jp-OutputArea-output" tabindex="0">
+<img alt="No description has been provided for this image" class="" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAABDsAAAGGCAYAAAB134ouAAAAOnRFWHRTb2Z0d2FyZQBNYXRwbG90bGliIHZlcnNpb24zLjEwLjksIGh0dHBzOi8vbWF0cGxvdGxpYi5vcmcvJkbTWQAAAAlwSFlzAAAPYQAAD2EBqD+naQAAkjZJREFUeJzt3QWcVNX7+PEDGIgKIiohiB2YqChgYbdid3d3B3Z3d4tdiB2o2CAWFmChooKiIqKAOP/X5/y+Z/53Z2d3Z5daZj/v12tkZ+bOvXfuvTvueeZ5ntMol8vlgiRJkiRJUploPL13QJIkSZIkaUoy2CFJkiRJksqKwQ5JkiRJklRWDHZIkiRJkqSyYrBDkiRJkiSVFYMdkiRJkiSprBjskCRJkiRJZcVghyRJkiRJKisGOyRJkiRJUlkx2CFJalA23XTT0KhRo/DUU08VfX7SpEmhSZMm4cwzz8w/ttRSS4VddtmlynV269YtrvP5558v+vyAAQPi8/369atyHXfeeWdcZsSIEdXuf/PmzSvs29S07777huWXXz7MqH744YdwxhlnhK+++mp670pZWW655cJee+0Vyt0555wTWrRoUevXTcvfUUlS1Qx2SJIalLnmmivMM8884cgjjwzjxo2r9DyBDp5v2bJl/jF+nm+++Yqu74svvojBjB122CHceOONVW4TrLcqaXvVLYM555wzzD333GFaYKDH9mZUv/32Wxx0jho1anrvSlmZltfg9FTX67+hHB9Jqu8MdkiSGpSZZ545bLbZZjEAcdxxxxVdZrbZZguzzDJL/j4/zzrrrEWXvfbaa8MWW2wRTjvttPDEE0+E7777rug2s/8Wk7aX3W5V+1/deqYktjPTTDOFGc348ePDX3/9FZo1a5YffPLYn3/+Ob13rSxMy2tweqrr9d9Qjo8k1XcGOyRJDc7ff/8dbrvttnDrrbeGZ555ps7rGTNmTLjjjjvCYYcdFpZeeumw5pprhuuvvz5MC/fee2/YaKON4jfICy+8cNhjjz3Czz//XGGZf/75J5x77rlhmWWWiQP/du3ahZ133jl8//33FZYjQLPjjjuGBRZYIMw777wxGPT4448X3e6gQYPCJptsEjNd2rdvH7beeuswdOjQWm83l8vFY5WWmX/++cNuu+1Wad8oRdl1111Dx44dY/bL+uuvHwYOHFjtsaFcaI455giLLLJIvM+5adq0adhvv/0qvY+2bduG2WefPZbrcC6TRx99NJYVvfbaa/nH/vvvv7DKKquEDTbYIP6c3gevW2211WIAjWO41VZbhU8//bTCPnGuOMYff/xx2HDDDWMApkOHDrFUiMBM4fV5yimnhBVWWCHuG2VUBx98cBg9enR+GX5m/9jPY445Jq6LdW688cbh22+/jdksO+20Uzz2vEfe+9ixY+NrH3zwwfjad955p9Kxu+qqq2Jg76effgo1efbZZ8OWW24ZWrdunb8Whg0blj9WHHf2p9C///4brzOyq6qSjj+ZU9tss01o1apV3A7HgePDvnNMOeaLLbZYuPTSS+O5yOIcsE9cO2RpdO/ePf7eFy7Hsdx///3Doosumr/G+Gwo5vPPPw89e/aMx5TfAc514fUvSaoncpIkNSB77LFHbocddog/X3bZZbnWrVvnRo4cWWGZjh075q6//vr8/bXWWit3wgknVFrXVVddlVt66aVz//33X7z/6KOP5lq1apUbN25cheW+/vprRle5zz77rMr9euaZZ+IyNWHfunXrlltmmWXia37++efcoEGDcptvvnmubdu2ud9//z2/7N57751bdNFFcy+88ELul19+icstv/zyubXXXju/zA8//JBr2bJlbvfdd8999NFHuZ9++in32GOP5RZbbLG4LO89efnll3Ozzjpr7tRTT80NHTo0N2LEiNzxxx+fa9GiRe69996r1XbvvvvuXLNmzXK33HJLbvjw4bnBgwfn1l133VynTp1ykyZNisuwLxzPTTfdNPfOO+/E5S644ILcbLPNlnv33XerPEYc/1GjRsXjzTH94IMPcr/99lvcFwwZMiQ3yyyzxHM6bNiweAwvvfTSuOwrr7ySX88hhxySW2qppfLnk/M977zz5n788ccKy3Dce/fuHY8l22S9TZs2zfXv3z+/HNfc6quvnptnnnlyV1xxRXwvAwYMiMd5q622yi83fvz4XOfOnXOrrLJKPN5cm7xXjsH888+f+/XXX/PLsb8c55133jkeP85J9+7d43ZWWGGF3FlnnRW3M3DgwNyCCy6YO+igg+Jr//3339ySSy6ZO+KIIyoduzXXXDNeC9Xhmlh11VXjtfjQQw/F6+CTTz7J7bvvvrnZZ58999VXX8Xl7r333txMM81U6feL99WoUaN47Kvy3HPPxfe3xBJL5M4777zct99+G48nx3/XXXfNLbDAArn77rsvnjuu1yZNmuQeeOCB/Otff/31eA6OOeaYeGw4Zzzfrl273MEHH5xfbuzYsbmFF144t9FGG8Xzwb5y3a688srxmuU9Jh9//HFc51577RV//vLLL3PHHntsvP75Ha/q80OSNH0Y7JAkNdhgB4PqddZZJ9ezZ898wKLUYAevZaCaXW7ixIm5Dh065G699daiwY7GjRvHQVmxG4O/UoMdDJjToDeZMGFCbpFFFsmddtpp8T7PMyDNDt7BgI8BKPuKffbZJw6Os+8fDFgJKqRgB88T2DnyyCMrLMfje+65Z+6GG26o1XYPP/zw3Prrr19hGQbmt99+e+6vv/6K9/fff/8YbEj3EwIsXbt2rfFYVRVkImix7bbbVlqebZ155pn5+wQ50nv+4osvYnDmySefzD9PEIJzyiC50GGHHRYDUtnrjn256667KizHtUIAKR3/iy++OAZPxowZU2E5AhQMvg899ND8Y6yPwFcKDuHZZ5+Nj3Psss4999wY4EjuuOOOOEjPbodgCa/NBq6K4ZogWETQKIv3wHO77bZbvM+55po8++yzKyxHsGKLLbaodhv9+vWL+3LiiSdWeJz7PE5wKYtr6cADD8zvB+eNc1CIc5U9Z+zbQgstFINHWQTH2rRpUyHYscEGG8TPC85F1vbbb5/bcccd8/cNdkhS/WAZiySpwWrcuHGcBeWVV14Jt99+e61ey8wrI0eOjCUWCfX9pNlfffXVlVLl8dhjj4UPPvig6O26664reduUJxQ2QKRHACn7b731VrzP82+//XZYa621KixH6j1lBNxAmQbro2Qga6GFFgrrrbde/j5lEZ988knYc889KyzH6zh2BxxwQK22S0PX119/PZYPPP3007FZLKUYrD/12nj11Vfj8U33E2bGYRuFZTulouzooYceqvQ4+5htWkvvlvvuuy82nmUWH/aNEp9suQwzk6y88sqV1rX33nuHwYMHV2iOSrkR5TxZCy64YOwnwg0vv/xyPDaFjTFpnMv2eT6L9XEdJxxDbL/99hWWa9OmTWzYmn0dpR2UdSQ33XRTWH311cOKK64YakIpDuUjhdcC203XIL8Pxx9/fLjmmmvy7+/XX3+Nx/7www8PpSicBYn3R5nN5ptvXuX7S9fqPvvsU2l9nKtll102PzMS1/+2225b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Hp9jjjniseJ4EpwpFhhSRf93diVJkiRJ9dKKZ788zbY16LR1arU8WRdkJ2y33XahTZs28efGjRuHBx98MA7Mf/311/DLL7/EjASWbdKkSdh0003jzwzYGdQTJOA+g/mHHnooLLjggvn1n3HGGTEAkHX//feHE044IQYZ0jZOOeWUmL2RggTsR+vWrfOvOemkk8KgQYPi83/99VfMjth8883DqFGj4mMEIwq9+uqrYdttty36XOfOnSvcJ7DSu3fvsPHGG8f7I0eOrPD8K6+8Ei644IKSMkgK3y9mnnnm0KxZs7D++uvH7dx6661hv/32q3FdDZnBDkmSJElSnTCoZwCeSi+GDBkSvv/++3DYYYeFPfbYI/z5558xGMFgn6AGQZA+ffqE0047LYwePTqWvlACQ1YHQZJislkOw4cPj69Zd911w8svvxxf06pVq1iyct9994Wdd945Hxxgn3DNNdeEJ554IgZaBg8eHD799NOYZbHhhhuG3XbbLfz2229h5ZVXjvs/bty4uK6hQ4eGWWedNfTs2TPccccdNR6HfffdN7+9uuAYUapCwIfAydJLLx3WWGONcOWVV8b9oCyGYAcuu+yy/H6m7BRV5pGRJEmSJNUJZSYEEEDGAT8TSCDL44orroiBj59//jn+fO2114YDDzwwdOvWLbz44ovh9NNPjz0wHnvssTiQ79GjR9hkk00qZDb89NNPMSMiIUhCpkVhYIT1d+/ePWy00UYx6DDXXHPln9t7771jFsRxxx0XvvvuuxhIOPfcc2NpCOUuBBQIenz++efh2GOPjcEYsB+LLLJILNHp169f0YwLghBnnXVWLFkp9nyp2F/KaTgOyy+/fPyZMp1ll102rpfgC48TxGFZymYIHK244op13ma5M9ghSZIkSZosY8eODTfffHPsrzFs2LBKGQdkTVC+kg1CvPfee7EhZ69evcLFF18cH3v66acrlbEkzz//fPjyyy+LZjMQuCCThHIZ+mpkS08okdlrr73CPPPME7p27RpWX331sPXWW4ctt9wyZnWQ6QECCosttlg+kEK2CTfeGxkXZIZk3w+BF5qGEmBp0aJF/jkyRj788MMKmR6U1TBjTfa9sQ5Kao455phYZjP//PPHx9k+fTvIFuHGcvQU2WmnneL7omeHamaDUkmSJElSnRFMIPuhXbt2sXcG2RyUm8w333wx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IPz777/hsccei48tvfTSYeDAgZWWHT9+fLyV4r///gt//fVXlc9/9NFH4eGHHy5pXb/99ls44YQT8vcnTpwY3n777ZJee8cdd4ShQ4fGIFCjRo2q3SfWm4JcLD9hwoT4PvDEE0+E559/PkxrBjskSZIkSZONgfFmm20W/vzzz/gvwYMVV1wxHHfccTW+9qqrrgprrrnmdDkLDM733Xff8Mknn4SDDz447veqq64all9++fDQQw8VfQ3BnLFjx8bl3n///XDRRRfFx5s3bx7mnHPOSsvffvvtoX379mGRRRYJiy66aLwtuOCCYbbZZsvfT7cFFlggbLDBBlXuL8+fddZZ4Y8//qjxvb3wwgvh+++/z98nILHPPvuEr776qtrXEbw45phjYsCCQEfTpk3jrSrnn39+fG8rr7xy6NKlS2jVqlX47rvv4nN9+vQJo0aNCtPaTNN8i5IkSZKkkg0dOu2yJBZbbJ46va5fv34xUHDbbbflgxYMcNdff/2wzTbb1Pj62WefPd6mtd9//z0cccQR4a233gq9evXKB2buv//+cM0114R11lmn6Ouuu+66sMcee8RAwIsvvhi22mqr+HiTJk3irdCBBx4Yb1kEIdZbb72YDVOVYcOGxYBRhw4d4rYSymcItMw00/8f0v/000/hnnvuCRtttFH+sbvuuiuccsop+fsELM4777z42H333VfldlnP4osvHpZYYol8ECe9L4JDf//9dwyEzDHHHPExgjZnnHFGWHfddeOynPNZZpklLvv666/HY5sNpHBr1qxZmJoMdkiSJEmS6oQMgZNPPjlmOpx++unhww8/DKuvvnoYMWJE2G677WIGApkSNakqSDA1Pffcc+GAAw6ImQ633npr2HvvvcPxxx8f5p9//vD444+Hp59+Og7ci5W8XH311eHNN9+MmRI333xzDET07t07ZrdsvvnmYdZZZ40BAQb9BBeqMnr06BjsWHLJJYs+z3oIdrzyyis1vh+CKSyfvPvuu+HHH38MrVu3jtkg88wzT2jcuHEMQIwZMyZmYaSfOYd77bVXfB2ZOaeeemp878sss0x87Ndff83/zGsoyTnooINi9gdSIIbXcd7TY59++mkMwmyxxRbxsc8++yxmgHCsjz322DA1GeyQJEmSJNXJe++9F3baaac4mKVPAwGPtddeOw5wr7zyygpZBrXx0ksv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N25c6Nq1a/joo4/icwQ+hg4dGh//+OOPY9bH33//HWZU48ePj1kqBm/UUDGnO7dZZ501/l6X2n+nrq+b0uglRH8h5t+WJEmS1HDVOPXsXHPNFd56663Qv3//GPSYMGFCeO2118Krr74a7r777nDWWWeFESNGxCyPM844I/z0008lb7xFixbhhRdeqPDYt99+G+add95w2mmnxftvvPFGmGeeecLw4cNDXXXu3DlcdNFFNS539tlnhwsuuCD+vNxyy4U555wz/PPPP1Uuv//++8fACAGf+uLyyy8Pa6+99vTejXDdddfFY/PQQw9Veu6xxx6Lg1HOK7dWrVqFtm3bhm222SZ88803cZmBAwfG1zNwLmdHHHFE2GuvvUJ9MXjw4NCyZcv4e7/wwgtP0deNHTs2lr6RKcZ5X2GFFeJnSNYvv/wSf68WWGCBeF3we0igNSHQynUxadKkotvYY489wsMPP1zyfkuSJElqoMEOGpCOHj06DlofeeSR+DODiQcffDD8+OOP4cknn4yDl0cffTQOYhdccMGSN04woXnz5vn7v/32W9hiiy3CTjvtFIMoWG211eIAiMFPXb3//vux70h1eF9XX3112GyzzeJ99otZaJ5++ukqs0Cee+65WM7D+6gv2BeCSJOrT58+oX379nV+/QMPPBA233zzcO+99xbdx6WWWiqeV26//vpr+Prrr8MSSywRttxyy5ghwKCZLIFmzZqFcjalztdVV10VVl999cleD1NHE2B64okn4vU/pV5HCRznlmAmU1OTMXbXXXfF3/PHH388vxy/+/xuffjhh/HaoAnyqaeeGj9vQMZI06ZNq8zc4PODdZJlJkmSJKnhqjHYgYUWWigOpggGdOzYMf587bXXxqlnkS37qE0JCM1N06Dlzz//DBtvvHHo0qVLuOKKK6Z5KQnbJCNi2WWXze/btttuGzMUimHwtcoqq8SBOcvWF+zL5OwPg9K//vorDlgJ+DBo5NzUBpkuDFZvuOGGmLlTmO1TbP8YwJJZM3LkyFgSNbnvY0Yxue+T64/SsXS+yHggg6Ku+L1Lv3uckyn1OjI/+vXrF66//vrY4Jhlydo46KCDYqAUf/zxR3j55ZfDNddcE7NEWGbVVVeN2S8E38DnRXUlKtttt10sZSEwK0mSJKnhKinY8f3334fzzz8/XHrppTEDgoFsdnDMgGtyMFjjG9lFF1003HjjjbHmPmFbDHpSOQklKQyYKHkgFZ6skmeeeSYMGzYsrLfeemG++eaL6fHZ6XB5DQPv6pCtcsghh1R4bI011ojfRH/66acVHuc9E/jZe++948Aq6/777w8rrbRS3DcCJwRRst8yEzg47LDDYqo/g7511103vPfee/nnL7nkktCzZ8846OvRo0d8P+zHF198UeGYrLXWWmHuueeO2RdHH310pXPw7LPPxsEky9BnJXvO2B8CVuwf+7niiiuG3r175wMdDDTZB7ZJKcGSSy4ZauO2226L56ddu3bxnPANfikYxHbo0CFmDNW2FKku10V1xyEh+LL77rvHzCLeD9kJrDM59NBDw5FHHhkzWRiYs51NNtmkQoCHQf7KK68cjyvBwgsvvLDS/t9zzz1h8cUXj8d7/fXXj9ddQukYZWJkvlDi1b1793z51+effx7XS3kIj/H6DTbYoOgxojSMdWdxDFhnCjhk1TXgWOx1BEwph+MYZg0YMCDuc8oi47WF1zK/Y5yfYiih43eAgAjnjWto3333tZRFkiRJauBqDHYwGKKcgEEo6fYEHehrQRkCKesMjrPftNY2fZyBHBkUY8aMCXfccUelb21JW2f76dti7tMbZOutt44DyjPPPDNOg7vDDjvEwRyP7bfffjEdPrsOyiKqQvkM2QjdunWreHAaNw4HH3xwDGxkvfPOO/Fb6A033LDC4/QfYB9uuummmKZPWQ+DYDIWwGCMIALp/vSkIIhEgIXB6ZAhQ+IyHGMG0yeddFIcvPN+GKDSiyDhvW666abhu+++iyU69FMhwJAwACb1n9IjSgEIJGVff+6558byEr79Zj/picBxJCjBsaKMgG/SOcccG/azVAxUOY+77LJLvL/rrrvG9WcDCNVdC1999VXRng81lSLV5bqo7jik/VlzzTVjadYnn3wS943jTmkVQb90vugrQ5COgNkPP/wQ5p9//hgAAceSAAkBqZ9//jm88sor8bw+//zz+f0gsMX5IyjCMgRqGLwnZD9wvfA874P9JgDDupZeeukYLCQbguuRpsHsTzEHHHBAeP311+My2WADv19cI1MTmScEgxKuB4I+ffv2jcE/ULLEez3wwAPjcSBLhf5AlMpx/ApxbRJYYt+z2WBct7xPSZIkSQ1XjcEOBoF8K8ugdbfddovfsN53333xW+RTTjkl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O35D31Cvmdp87vrZXPlzGH4WF/8sHjNmjNeMpGrNVP3TklR+yEr4+uuv46AsO5AnPfbzzz8PCyywQGhIKD2gZOOpp56K0/etttpq8fGaBh4rrrhiKEd33nln+O677+K0qYVmnnnm+L75I5tjw0A/i+uHb/jLFYN3pn1caaWVKjzOt89kMnz//fdx0ErWzworrFDp2HTt2jWUI0oOKFt5/PHH8yUKbdu2DZdcckksP+B6auifOaV87pL50VB/t6r6HIafxcU/i/kcIjjdUK8ZSTUzs0NSg7PEEkvENPPXXnutwuODBg2K38CuvPLKoaFg4LHLLruE/v37hzfffLPCH9jZgUehch6g3XjjjWHChAkxg+F/jbzjH9RLL710mDhxYvx51VVXjQPbLL7JHz58eNhggw1COWOAQelKFseI3x8CHpSzPPbYYxWep+fAu+++G7bccstQjn799df4zXNhLwbu81lDX5OG/plTyucuWVMN8Xerus9h+Flc/LOYvlEN9ZqRVKLJaG4qSTOse++9N05j984778Rp/IYOHRqnjrzmmmtyDcnNN9+ca9euXW7kyJFFn19ttdVyt912W4XH6Pw/11xz5X755ZdptJfT3/PPPx+nzczOstGyZcvcc889l5s4cWJuxIgRufXXX7+spoGsCtOpzjPPPLknnngivveff/45d/DBB+dWXnnleJ/fpRYtWuR69+4dp6JlGs3ddtstt9122+XK1ejRo3Nt27bN9erVK/fHH3/kH+M+nzM81tA+c5hyt3Cq4VKOQbn/bhWbcaSmz+GG8llc7Jqp6bO4IVwzkurOYIekBonpDu+5557csssum5t77rlzK620UqU/JBuCTp065S699NIqj5F/RP6fhx56KNe6desKx4c/rLt06ZJr1apVbplllolTR3LMGoJ+/frlVl999fje27dvn9tnn30qDNSYWrNHjx7xeQYmxx57bG7ChAm5csbUqjvvvHM8HnymMHDbaaedckOGDGmQnznNmzePA9OsUo9BOf9uFRvQ1/Q5jIbwWVzsminls7jcrxlJddeI/5SaBSJJKh+///57rHGmHpxZVxL+t0DZwf333x/rnZ9//vlw6qmnhq+++ir2IWAmjuOPP75Syr4kqXp83j788MNh/fXXr9XnMPwslqTaMdghSQ0UdeI0xWNGjWzggl4VzCZBA7jCDviSJD+HJWlGYLBDkiRJkiSVFWdjkSRJkiRJZcVghyRJkiRJKisGOyRJkiRJUlkx2CFJkiRJksqKwQ5JktRg/PvvvxXuT5gwYapujylEJUnStGewQ5IklaXXXnstbLzxxvn7Tz75ZDjhhBPy9wcMGBDWWWedatex/PLLh7fffrvaZa666qoY1DjllFPCfffdF/74449w8803x+dOO+20/M+SJGnaMdghSZLK0uyzzx5mm222/P311lsvPP7442Hs2LHx/vXXXx/23XffatfRvHnzMOecc1a7zMCBA8NLL70UmjZtGm9XXHFF+Pvvv+Nzb775ZlhqqaWmyPuRJEmlM9ghSZLKUpMmTULjxv/3p864cePCzz//HHbdddfw3nvvhWHDhoV+/frFzA5+njhxYhgzZkylshPWwa2wFOb333/P3z/uuOPChx9+GBo1ahRf379//7D//vuHSZMmhU8++SR06dJlGr1jSZKUNMpZTCpJksrI999/HzbZZJPw33//hREjRoQFF1ww7LHHHqF3794x04NAxU8//RSWXHLJGJwg0+Oee+4J66+/fszkSAES+nkMHTo0zDPPPKF169b59Y8fPz507NgxvPjii+Hhhx8ON9xwQ5hpppnCl19+GeaYY44w33zzxeDJEUccEXbeeed8Zsdff/0Vb++//35o1arVdDs+kiQ1BAY7JElSWSHIwe3888+PJSaUrhDUSEGMV155Jdxxxx3xVp0zzzwzXHvttaFDhw7hmWeeiUGMQv/880/8l+Vuv/32sMgii4Qrr7wyBkd23333sNxyy8W+HWSWrLrqqvkMEG6SJGnqmWkqrluSJGmaI6jBjSDHRx99lC9XIYODPh6FJSlkYWR7e2Dw4MExA4MGpT179gx77rln6Nu3bz5gkt0WZSxkdWy//faxv8d+++0XM0tYBxkf4PlFF1200uslSdLU4f9xJUlS2fnss89Cy5Ytw7rrrhszK77++uvQvXv3sPLKK4cDDjggzszCz9wuvfTSCq/97bffYvnJOeecEwMhrIPGo5dddlml7dx0003hhx9+CA899FAMmGy++eYxC4RACQ1QR44cGbNK6Auy2GKLTcMjIElSw2YZiyRJKjs77bRTLBt5/fXXw+mnnx7atGmTL0Oprozlzz//jFkZBx98cFxHjx49Yk+Odu3ahbXWWiuceOKJYYcddsgvTw+OWWedNQY1ttxyyzidLcENylsIfuy2227hwAMPDPfee2+cDWbrrbeepsdBkqSGyswOSZJUVpgN5dtvvw2rrbZavE/fDBqP0sejGBqRUs4yatSoGOggO4NARxavf+KJJ8KFF14YM0HSuu677764nWWXXTauZ/XVVw/zzz9/fBw0RiVY8tprr8X1SpKkacPMDkmSVFbo0UFWBf0yLrjggjhjyt577x2bldIzg94do0ePDgsssEBcniwMghu33XZbDGYQ9KDhKKUrlJ+0b98+zDLLLDGLY9CgQXFdTGNLuQo9OpixhZ4eBDSYvpZyGTI8mJmFLI9OnTqFbbfdNpx99tnT+9BIktRg2KBUkiSVlbXXXjv+S3AjIZCRFCtjGT58eCwzIUuD4AelJzPPPHO+jGWJJZaIwQ4anNKfg2alBDpACUuzZs1ig9JJkybFUhcCHaBJKlkj/MtUtExjK0mSpj7LWCRJUlki8FCsdCVNTZtFlkcqeyGjg0AHCFSwHqaKJYDBv2SHbLHFFvnX8joCIiNGjIi33r17x+yQm2++OfYLefXVV8Oxxx4b1l9//fD5559P9fctSZLM7JAkSWWKTAxKVgqNGzcuZm+UgoallKZU5e23344BDYIi5513XswqIfNjs802i+UvL774YmjdunXs3UEQhUwRZoLp0qXLZL03SZJUPXt2SJIk1REZHExVu/jii+cfo08H2RwENgpRLtO2bdt85ogkSZo6DHZIkiRJkqSyYs8OSZIkSZJUVgx2SJIkSZKksmKwQ5IkSZIklRWDHZIkSZIkqawY7JAkSZIkSWXFYIckSZIkSSorBjskSZIkSVJZMdghSZIkSZLKisEOSZIkSZJUVgx2SJIkSZKkUE7+H6OJoJEpKsR1AAAAAElFTkSuQmCC"/>
+</div>
+</div>
+<div class="jp-OutputArea-child">
+<div class="jp-OutputPrompt jp-OutputArea-prompt"></div>
+<div class="jp-RenderedText jp-OutputArea-output" data-mime-type="text/plain" tabindex="0">
+<pre>每类 1 条代表性失败样本：
+</pre>
+</div>
+</div>
+<div class="jp-OutputArea-child">
+<div class="jp-OutputPrompt jp-OutputArea-prompt"></div>
+<div class="jp-RenderedHTMLCommon jp-RenderedHTML jp-OutputArea-output" data-mime-type="text/html" tabindex="0">
+<div>
+<style scoped="">
+    .dataframe tbody tr th:only-of-type {
+        vertical-align: middle;
+    }
+
+    .dataframe tbody tr th {
+        vertical-align: top;
+    }
+
+    .dataframe thead th {
+        text-align: right;
+    }
+</style>
+<table border="1" class="dataframe">
+<thead>
+<tr style="text-align: right;">
+<th></th>
+<th>badcase_taxonomy</th>
+<th>model</th>
+<th>variant</th>
+<th>question</th>
+<th>expected_answer</th>
+<th>model_response</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<th>80</th>
+<td>多 key 条件下定位失败</td>
+<td>DeepSeek-V3 (API: deepseek-chat)</td>
+<td>multi_key</td>
+<td>A3 产线切换到新工艺的正式日期是哪天？</td>
+<td>2025年6月18日</td>
+<td>NaN</td>
+</tr>
+<tr>
+<th>159</th>
+<td>未作答或信息未命中</td>
+<td>DeepSeek-V3 (API: deepseek-chat)</td>
+<td>style_aligned</td>
+<td>公司 2025 年资本开支上限是多少？</td>
+<td>18.6亿元</td>
+<td>NaN</td>
+</tr>
+<tr>
+<th>175</th>
+<td>深层位置召回失败</td>
+<td>DeepSeek-V3 (API: deepseek-chat)</td>
+<td>style_aligned</td>
+<td>公司 2025 年资本开支上限是多少？</td>
+<td>18.6亿元</td>
+<td>NaN</td>
+</tr>
+<tr>
+<th>11</th>
+<td>被相似数字干扰</td>
+<td>DeepSeek-V3 (API: deepseek-chat)</td>
+<td>numeric_confusable</td>
+<td>区域配送的 SLA 指标是多少？</td>
+<td>92.1%</td>
+<td>24小时履约率。</td>
+</tr>
+<tr>
+<th>9</th>
+<td>输出冗余但包含正确答案</td>
+<td>DeepSeek-V3 (API: deepseek-chat)</td>
+<td>multi_key</td>
+<td>院务会最终批准的日间手术中心新增床位数是多少？</td>
+<td>42张</td>
+<td>42张。</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+</div>
+<div class="jp-OutputArea-child">
+<div class="jp-OutputPrompt jp-OutputArea-prompt"></div>
+<div class="jp-RenderedText jp-OutputArea-output" data-mime-type="text/plain" tabindex="0">
+<pre>EM miss 但 Contains hit 的典型样本：
+</pre>
+</div>
+</div>
+<div class="jp-OutputArea-child">
+<div class="jp-OutputPrompt jp-OutputArea-prompt"></div>
+<div class="jp-RenderedHTMLCommon jp-RenderedHTML jp-OutputArea-output" data-mime-type="text/html" tabindex="0">
+<div>
+<style scoped="">
+    .dataframe tbody tr th:only-of-type {
+        vertical-align: middle;
+    }
+
+    .dataframe tbody tr th {
+        vertical-align: top;
+    }
+
+    .dataframe thead th {
+        text-align: right;
+    }
+</style>
+<table border="1" class="dataframe">
+<thead>
+<tr style="text-align: right;">
+<th></th>
+<th>model</th>
+<th>variant</th>
+<th>question</th>
+<th>expected_answer</th>
+<th>model_response</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<th>9</th>
+<td>DeepSeek-V3 (API: deepseek-chat)</td>
+<td>multi_key</td>
+<td>院务会最终批准的日间手术中心新增床位数是多少？</td>
+<td>42张</td>
+<td>42张。</td>
+</tr>
+<tr>
+<th>13</th>
+<td>DeepSeek-V3 (API: deepseek-chat)</td>
+<td>style_aligned</td>
+<td>公司 2025 年资本开支上限是多少？</td>
+<td>18.6亿元</td>
+<td>18.6亿元。</td>
+</tr>
+<tr>
+<th>16</th>
+<td>DeepSeek-V3 (API: deepseek-chat)</td>
+<td>style_aligned</td>
+<td>急诊药房重点监控药品的库存周转天数是多少？</td>
+<td>6.5天</td>
+<td>6.5天。</td>
+</tr>
+<tr>
+<th>19</th>
+<td>DeepSeek-V3 (API: deepseek-chat)</td>
+<td>style_aligned</td>
+<td>急诊药房重点监控药品的库存周转天数是多少？</td>
+<td>6.5天</td>
+<td>6.5天。</td>
+</tr>
+<tr>
+<th>27</th>
+<td>DeepSeek-V3 (API: deepseek-chat)</td>
+<td>numeric_confusable</td>
+<td>区域配送的 SLA 指标是多少？</td>
+<td>92.1%</td>
+<td>92.1% 的 24 小时履约率。</td>
+</tr>
+<tr>
+<th>32</th>
+<td>DeepSeek-V3 (API: deepseek-chat)</td>
+<td>style_aligned</td>
+<td>急诊药房重点监控药品的库存周转天数是多少？</td>
+<td>6.5天</td>
+<td>6.5天。</td>
+</tr>
+<tr>
+<th>33</th>
+<td>DeepSeek-V3 (API: deepseek-chat)</td>
+<td>numeric_confusable</td>
+<td>区域配送的 SLA 指标是多少？</td>
+<td>92.1%</td>
+<td>92.1% 的 24 小时履约率。</td>
+</tr>
+<tr>
+<th>35</th>
+<td>DeepSeek-V3 (API: deepseek-chat)</td>
+<td>style_aligned</td>
+<td>本季度封装段一次良率目标是多少？</td>
+<td>98.2%</td>
+<td>98.2%。</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+</div>
+<div class="jp-OutputArea-child">
+<div class="jp-OutputPrompt jp-OutputArea-prompt"></div>
+<div class="jp-RenderedHTMLCommon jp-RenderedMarkdown jp-OutputArea-output" data-mime-type="text/markdown" tabindex="0">
+<h2 id="7.-multi-hop-%E6%AD%A3%E5%BC%8F%E7%BB%93%E6%9E%9C%E4%B8%8E%E7%9C%9F%E5%AE%9E%E4%BB%BB%E5%8A%A1%E5%8F%A3%E5%BE%84-Pilot">7. multi-hop 正式结果与真实任务口径 Pilot<a class="anchor-link" href="#7.-multi-hop-%E6%AD%A3%E5%BC%8F%E7%BB%93%E6%9E%9C%E4%B8%8E%E7%9C%9F%E5%AE%9E%E4%BB%BB%E5%8A%A1%E5%8F%A3%E5%BE%84-Pilot">¶</a></h2>
+</div>
+</div>
+<div class="jp-OutputArea-child">
+<div class="jp-OutputPrompt jp-OutputArea-prompt"></div>
+<div class="jp-RenderedText jp-OutputArea-output" data-mime-type="text/plain" tabindex="0">
+<pre>任务级对比：
+</pre>
+</div>
+</div>
+<div class="jp-OutputArea-child">
+<div class="jp-OutputPrompt jp-OutputArea-prompt"></div>
+<div class="jp-RenderedHTMLCommon jp-RenderedHTML jp-OutputArea-output" data-mime-type="text/html" tabindex="0">
+<div>
+<style scoped="">
+    .dataframe tbody tr th:only-of-type {
+        vertical-align: middle;
+    }
+
+    .dataframe tbody tr th {
+        vertical-align: top;
+    }
+
+    .dataframe thead th {
+        text-align: right;
+    }
+</style>
+<table border="1" class="dataframe">
+<thead>
+<tr style="text-align: right;">
+<th></th>
+<th>model</th>
+<th>task</th>
+<th>n</th>
+<th>em_pct</th>
+<th>contains_pct</th>
+<th>contains_ci_low_pct</th>
+<th>contains_ci_high_pct</th>
+<th>avg_latency_s</th>
+<th>avg_response_chars</th>
+<th>avg_completion_tokens</th>
+<th>total_cost_cny</th>
+<th>cost_per_contains_hit_cny</th>
+<th>cost_per_em_hit_cny</th>
+<th>contains_per_1k_output_tokens</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<th>0</th>
+<td>DeepSeek-V3 (API: deepseek-chat)</td>
+<td>multi_hop</td>
+<td>4</td>
+<td>50.0</td>
+<td>50.0</td>
+<td>15.0</td>
+<td>85.0</td>
+<td>0.66</td>
+<td>5.2</td>
+<td>3.2</td>
+<td>0.0005</td>
+<td>0.0002</td>
+<td>0.0002</td>
+<td>145.83</td>
+</tr>
+<tr>
+<th>2</th>
+<td>Kimi (Moonshot, API: moonshot-v1-128k)</td>
+<td>multi_hop</td>
+<td>4</td>
+<td>25.0</td>
+<td>50.0</td>
+<td>15.0</td>
+<td>85.0</td>
+<td>0.64</td>
+<td>8.5</td>
+<td>7.2</td>
+<td>0.0312</td>
+<td>0.0156</td>
+<td>0.0312</td>
+<td>62.50</td>
+</tr>
+<tr>
+<th>4</th>
+<td>Qwen-Long (API: qwen-long)</td>
+<td>multi_hop</td>
+<td>4</td>
+<td>50.0</td>
+<td>50.0</td>
+<td>15.0</td>
+<td>85.0</td>
+<td>0.51</td>
+<td>5.0</td>
+<td>4.8</td>
+<td>0.0020</td>
+<td>0.0010</td>
+<td>0.0010</td>
+<td>100.00</td>
+</tr>
+<tr>
+<th>1</th>
+<td>DeepSeek-V3 (API: deepseek-chat)</td>
+<td>niah</td>
+<td>350</td>
+<td>61.1</td>
+<td>90.6</td>
+<td>87.1</td>
+<td>93.2</td>
+<td>0.73</td>
+<td>6.1</td>
+<td>4.8</td>
+<td>1.8211</td>
+<td>0.0057</td>
+<td>0.0085</td>
+<td>213.38</td>
+</tr>
+<tr>
+<th>5</th>
+<td>Qwen-Long (API: qwen-long)</td>
+<td>niah</td>
+<td>350</td>
+<td>80.0</td>
+<td>81.4</td>
+<td>77.0</td>
+<td>85.2</td>
+<td>7.14</td>
+<td>6.0</td>
+<td>5.5</td>
+<td>11.3116</td>
+<td>0.0397</td>
+<td>0.0404</td>
+<td>164.01</td>
+</tr>
+<tr>
+<th>3</th>
+<td>Kimi (Moonshot, API: moonshot-v1-128k)</td>
+<td>niah</td>
+<td>350</td>
+<td>58.9</td>
+<td>63.1</td>
+<td>58.0</td>
+<td>68.0</td>
+<td>1.06</td>
+<td>4.5</td>
+<td>4.5</td>
+<td>86.6157</td>
+<td>0.3919</td>
+<td>0.4205</td>
+<td>103.73</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+</div>
+<div class="jp-OutputArea-child">
+<div class="jp-OutputPrompt jp-OutputArea-prompt"></div>
+<div class="jp-RenderedHTMLCommon jp-RenderedHTML jp-OutputArea-output" data-mime-type="text/html" tabindex="0">
+<div>
+<style scoped="">
+    .dataframe tbody tr th:only-of-type {
+        vertical-align: middle;
+    }
+
+    .dataframe tbody tr th {
+        vertical-align: top;
+    }
+
+    .dataframe thead th {
+        text-align: right;
+    }
+</style>
+<table border="1" class="dataframe">
+<thead>
+<tr style="text-align: right;">
+<th>task</th>
+<th>multi_hop</th>
+<th>niah</th>
+</tr>
+<tr>
+<th>model</th>
+<th></th>
+<th></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<th>DeepSeek-V3 (API: deepseek-chat)</th>
+<td>50.0</td>
+<td>90.6</td>
+</tr>
+<tr>
+<th>Kimi (Moonshot, API: moonshot-v1-128k)</th>
+<td>50.0</td>
+<td>63.1</td>
+</tr>
+<tr>
+<th>Qwen-Long (API: qwen-long)</th>
+<td>50.0</td>
+<td>81.4</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+</div>
+<div class="jp-OutputArea-child">
+<div class="jp-OutputPrompt jp-OutputArea-prompt"></div>
+<div class="jp-RenderedImage jp-OutputArea-output" tabindex="0">
+<img alt="No description has been provided for this image" class="" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAA90AAAGGCAYAAABmGOKbAAAAOnRFWHRTb2Z0d2FyZQBNYXRwbG90bGliIHZlcnNpb24zLjEwLjksIGh0dHBzOi8vbWF0cGxvdGxpYi5vcmcvJkbTWQAAAAlwSFlzAAAPYQAAD2EBqD+naQAAWqdJREFUeJzt3QWcFWX///+LUkBaJRRUFBWxMLG79VbsDuxuxcbC7rxN7MJulNsuxO5GQQGxAAmlzv/xur6/Of/Zs2d3z8IOC7uv5+NxZE/NzJmZXc/7uj7XNQ1yuVwuSJIkSZKkGtew5hcpSZIkSZIM3ZIkSZIkZciebkmSJEmSMmLoliRJkiQpI4ZuSZIkSZIyYuiWJEmSJCkjhm5JkiRJkjJi6JYkSZIkKSOGbkmSJEmSMmLoliRJmdl6661DgwYNwjPPPFP0+enTp4dGjRqFc845J//YMsssE/bcc88Kl7nmmmvGZb7wwgtFnx86dGh8/uWXX65wGXfeeWd8zciRI0Ndd/TRR4euXbuWeYzjccUVV5R57Mcff4z75Oyzz650ecn+ffvtt8OcZtq0aeG6664L6623Xmjfvn1o27Zt6NWrVzjvvPPCpEmTZss29O/fP7z00ksz9d7FFlssbLDBBjW+TZJql6FbkiRlpk2bNmGBBRYIxx57bNHQQ+DmecJRgp8JTMV8/fXXMfTtuuuu4aabbqpwnWC5FUnWV9lr6oqWLVuGdu3alXmMBolbbrmlzGOLLrpomDx5cjjjjDMqXV4p+7c2/Pnnn2G11VYLV199dTj88MPDW2+9FT799NNw5plnhocffjgst9xyYfjw4Zlvx5VXXhnP0ZnB+V1RY5KkuZehW5IkZaZJkyZhm222iUHtpJNOKvqaZs2ahXnmmSd/n5/nnXfeoq+9/vrrw7bbbhuD1BNPPBFGjBhRdJ3pf4tJ1pdeb13Ffkj2xd9//x2mTJkS5ptvvhjGZ8yYER/7999/Y+9106ZNQ+PGjatcXvrfOcX+++8fz5sPP/ww7LbbbqFbt26hc+fO8fwjBPPZDjzwwEzWncvlwrhx4+L+TPbt1KlTw9ixY6u1HLa/PpyTUn1j6JYkSZmi9/T2228Pt912W3juuedmejnjx48Pd9xxRzjqqKPCsssuG0uIb7zxxpCVLbfcMpYmFyKgtmrVKt+IQGg94YQTYgk3wW6JJZYIZ511VvzclXn00Udj0KV3c8cddwzzzz9/6NChQ+yl5b1DhgwJW2yxRWywWHLJJcPll18ew11ihRVWKBoi77777rhcen4LHXTQQTHYnXvuuTGIUmnAZ6Hnm9DI+zhWpSBg0gjSvXv30Lx589CjR49wzz33lHsdZeh8joUWWih+xvXXXz889dRT5Urg11lnnfDVV1+FvffeO+5Deuc33HDD8Morr1S5LfRo0whzzTXXhBYtWpR7niDLtlFxwXYnvvjii7DDDjvEXv7WrVuHtdZaK37+9H5+4IEH4n7566+/woknnhg/B6Ga8++9997LnxMcJ/YnvelHHHFEXCf7JjF69OhwwAEHhMUXXzyeJ5wvp5xySmwESay00kphn332yd/n/bzmtddei/uH/UxjwsknnxxL6RNsL78L9ObzmoUXXjjux59//rnKfScpe4ZuSZKUueWXXz5ceOGFoU+fPuG3336bqWUwDnuRRRbJj3klfN98881VhtuZdfzxx4d33323XG86AZVSeYIijjvuuDhG+tprr42Bi8YFtpX3VyYJh9ttt11YddVVYw/tI488EkuhDz744LDLLruE/fbbL3zzzTfh0ksvDX379g0DBw7Mv5/gR2AuRHhMni90ww03xHB9+umnx1LsiRMnhl9//TUGYcIaCkvRK0LDwr333htuvfXWOB6c40HQe+ONN/Kveeihh8LGG28cl//qq6+Gjz/+OOy1117xdXym9GchlPJagueLL74YPvjggzgnAIH98ccfr3RbaMwhOK+++uoVvmbllVcOW221VWjY8P++/r755pthlVVWiSH42WefjY0fhHKqKI488shy5fRs8w8//BCefvrp+FrmHiB4s900ZIwaNSruT85Rwj+NRB999FF8L8Ga85Y5BGhs+eWXX2KDBcfjoosuyq+LY5De/6yb84KGgUMOOSSun2EBND4RvBMcBxoEOBeTEnW2Z/PNNy/TyCCpluQkSZIysu++++Z23XXX+PP06dNzG220Ua537965GTNm5F+z6KKL5m688cb8/fXXXz/Xt2/fMsvhvUsuuWSZ102dOjXXpUuX3G233VbmtcOGDaObMtewYcNco0aNit4aNGgQX1MZtrF79+65888/v8zju+++e27nnXfO319hhRVy/fv3L/Oat956K/fEE09UuvyXX345bsMpp5xS5nHu8/h9991X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11GEDkq2zz777FjmW+iMM84IN998c5g8eXIMgH379s0/984774TWrVuHadOm5R9bccUVw6233hp/Hj58eHxPx44dY6g/8cQTw6RJk+Jz9OSyvp9++instdde8fkll1wy3HTTTbP8meiZ32effeIyF1poobDddtuF7777Lv/8kUceGY499tjY89yrV6/Qvn372DM9evTo/Gv++eefGJy7du0al8PyBg8eHBZeeOFK10045jN36tSpzOO8t0mTJnF9e+65Z7jttttK/jyE9FGjRpV7nM/BZ6vMAw88EI8Jn3HDDTcMb7zxRlh11VXDk08+GR5//PHQoUOHMsGze/fuZXqAOTfWWWed+DPHmaDKcWJ5m2++efj000/zr91mm23CVVddFa677rrQs2fPuOzdd989/P333yV/Vkryr7nmmrD88svH8nrK9O+77778Nr733nuxt3/EiBFxP3N8l1122fhZ0p544on4OdnO9dZbL7z++uvxs7344ovxebaLZTAUQJIkSZoTGLrrKMIcpc7LLbdc0ecJj4QnQisB7/33388/N2jQoPjed999N94nmBNiKIcmtBLyttxyy1gaTTj7448/YlAEYR1777132HTTTePyCayMI5+VIMT2ELLoqf/888/DDz/8ELbeeutYPv/nn3/m1/3mm2/GgE/A/OWXX2KYJogn9t9//9ggMHTo0PD999/HUH7UUUdVWQb91ltvhXXXXbfc4zREELZpaNhtt91iCCf0lYL9sfjii5d7nHBLuKzI008/HcvTaTShVP2///1vOPPMM8PPP/8cy7o322yzOKaazw8+Lw0lL7zwQn4ZHO8k2NMAM2TIkBhgOW8OPvjguG9/++23/H6lIYMx6Hy+YcOGhXHjxoX+/fuHUvHae++9NzzyyCNxuTROnHPOOeGuu+7Kr4Ngvssuu4SDDjoo7kMqMnbdddd8uGf7Dz/88BjeaUi55ZZbwllnnRWXlxw/qgVoPKARoiKUoLN/0jdJkiQpK3WnnlVlEFoI1oXjj9PoqSY4J8GTQN20adMY+I455pj471prrRXDGBOwEdIppWY8+CGHHBKXwesJfTx36aWXhvnnnz8+Ti/qvvvuG38m+G+yySYxEFPmTu9msl0ErWI98YUIfSyboJa8nnBIuLr++utj6KTHmUnN+OzJ+GgmN6OxAITFZ555JobQZPw4QZnG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t6ouqXXBBReEAw44IGy44YZh3LhxYZ999gmPP/54WG211cJ9990Xbr755rD88svX+6Ni6JYkSZKkemzYsGHhmGOOCdtss021Jhi74YYb8mXkr7/+elh44YVjeKccfYEFFoiPNW7cOJakN2nSJNRXhm5JkiRJqsc+/PDDcOGFF4YHHngg3u/cuXNo27ZtflI0JlLr2bNnvof777//Dpdffnl8/ffffx86dOgQVl111bD//vuHPn36hB49esRx3O+880648sorw/vvvx86duwYnn766bl6ZveZZeiWJEmSpHqMsdegJBzffPNNaNasWT4g02vNhGqJ5JrVzGbeunXrMjOWd+nSJXz22WdhmWWWibf99tsvTJ8+PS6rPgZuGLolSZIkSXnNmzevdG8kpeLXXnttuPfee/OvnzhxYuwFJ4wnJkyYEBZffPFKr/1d1xm6JUmSJEnV1q9fv3hLMAnbKqusEvbee+/8YwMHDgxvv/12vd67DWt7AyRJkiRJc7fnn38+DBkyJOy+++5lHv/iiy/CCiusEOoze7olSZIkSXGsNtfnZlZySsfnnXfechOp8fxSSy0VHn300Xj/zz//DFdccUUYNGhQnCiN2coZw52M83799derNSt6XWToliRJkiTF8djcKA/nmtvzzTdfucnPpkyZEl/DrOVMkkYg51rdb731Vn6s92WXXRZDOwF8ueWWCyuuuGK93rsNcsz5Lkn1FNeVZNbNUdc3D62a1c8ZNSVJdUPzPhNqexPqvX/++Sde87pr166hadOmdXp/ECO/+uqr0L179wpnJec1DebyGcsrO6bJ98hx48aFVq1aVbgMe7olSZIkSdVCmOaSYFW9Rk6kJkmSJElSZpy9XJIkSZKkjBi6JUmSJEnKSJVjuq+//vo4a13Dhg3L1eevueaaoVu3bmUeZ2Y6Zq7jPZIkSZIk1WdVhu5vvvkmtGjRolzo5hpuF1xwQfjggw/C0UcfHW655ZZ8GDdwS5IkSZJUQui++uqrK5z+naDNtdjefffd/OPzzDOP+1WSJEmSpFIvGXbyySfnL4w+Y8aM0KFDh3ghdHq4ueC5QVuSJEmSpJkM3UsssUQM3fRujx07NnTs2DE0a9Ys9OvXLz7v9dckSZIkSZqJ2ct/++23WD6+1157hR133DGWlG+//fbxOQL40KFDw6RJk8Knn34aPv744zB5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77+1vQmaA+VyuTBlypTa3gxJkiSpDEN3CVq3bh1vCyywQLwtssgiYYsttggvvvhiqA3jx48PJ554YlhiiSXi9vTs2TOcf/75Yfr06TW2jh122CGcddZZJb/+wQcfDPPOO2+YOHFi0eePP/74sOKKK8ZghMGDB4c111wztG/fPnTp0iUcfPDB4Y8//ihpXQcccEC4//77yz2+yy67hEaNGoXRo0eXe+6YY44JTZs2zR/D+eefPyy22GLhhBNOyG/zZZddFlZfffUwKwYMGBBWXnnlUFd88sknoUGDBjV6bn344YehYcOGYcaMGaEmnX766eHKK6+s0WVKkiRJs8rQXYKWLVuG//3vf+H333+Pt2+++SacdNJJ4cgjj4xBbXbbd999w8iRI8Pbb78dfvvttxhAn3rqqXDUUUfV2Drmm2++eCvV9ttvH9q2bRtefvnlos8PGjQo7i8CHKFrxx13DOedd14MyJ9//nnsodx///2rXM/XX38dnnjiibDxxhuXefzvv/+O69h8883DAw88UPQYHnjggfljSMB/991347pPPvnk+Jo2bdqEdu3ahVnBeqqz3+Z0fBYaK2jMqCnso1atWsXgPasNQ2eccUb+/rbbbht/HydMmFADWylJkiTVDEN3CRo3blzmPiGE0Pfcc8/FHuYRI0aE2YVAQcC+6aabYi8xIXaZZZYJ1113XXjrrbdqrPSakFWdoDXPPPOEvffeu2gP9GeffRaGDRsWdt1113j/u+++C+ecc07YZJNNYvAigF1yySXh2WefrXL7+/fvH3u6+eyFPe30nB9++OHhtttuy/eoV3QMwTLoGb3nnnvi63lNsddVB++vyYBa26p7HpRiVvcz5wiNNC1atIjnDj9Pnjw5rLHGGmGFFVYIN954Y41uryRJkjQrDN2zYPHFF4+9bYS2xGuvvRbDHyXM3bt3D7feemu5AEpgJ/Dx/gsvvDBfuvvxxx/H3lZ6c7faaqvQqVOnsPTSS8feu6QUl3DL7Ycffiiz3NVWWy189NFHscQbhBBKqimh7tixY9hpp53CTz/9lH/9tGnTwrnnnhuWXHLJuC30EH/66acVflZ6pVnOF198UWkP/OOPP16up/G+++6LPdsEJOy8887h2GOPLfMaSrzpVW3SpEmFy2ebH3vssXDEEUeUe46gveeee8bPMWrUqDB06NBQikUXXTSW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+P3338Orr74a3n777XDCCSfE5/3OUgcwkZok1SczZszILb300rnBgweXefzjjz/OtWrVKvfvv//W2rapdt155525Dh065F577bXctGnTcn/99VfuoIMOym233Xbx+RdffDE+/+qrr+amT5+e+/7773Prrrtu7qSTTvLQ1UM//vhjrkuXLrk77rgj16NHj/zjm2++ee7WW28t89rffvst17Rp09wvv/xSC1uq2nLOOefkDjnkkDKPjR07NnfVVVflJk+eHJ8744wzyjzP/4Pat2+fe+edd2bz1qq2rLTSSrmnn366zGNvv/12buGFF/Y7Sx1hT7ekeoeehm+//Tass846ZR5ffvnlY+/mu+++W2vbptpF5cNxxx0X1l133dCoUaPQpk2b2ANB78O///4bLrvsslgmvN5664WGDRuGxRdfPDz66KPh2muvjT2aqj8o+6S38oILLogVEQ0aNIiPUxZM7zdDV9L427LWWmuFl156qZa2WLXh7rvvDgcffHCZx1q3bh2OOeaY0LRp0/DEE0+UO1fmmWee2PvNeaT6c2mwwuEn3Ofvht9Z6gZDt6R656effophqfDa3Hxp7tatW/j+++9rbdtUuygTPvDAA8s8NnTo0NCiRYtYEmqYEigLPvzww2OI3muvvcrMBfHLL7+Exo0bxyBeyL8v9cuMGTPi/28ITvvvv3/8/84SSywR9ttvv9hIR0Pe6NGjQ/fu3cu913OlfmEcf79+/eIQBM6b7777Lpx99tnh4osv9jtLHWHollTv/Pbbb2HRRRct+hw9m+PGjZvt26Q5w0orrRQnsUl89NFHcWwlY3MNU0ow9wO9T5dffnnRvy9dunSJlRKF/PtS/8ZzE6BomNlkk03i+O333nsvTqbGfQI358lCCy1U7r2eK/ULE+lttdVWseKuefPmcfJFGmP4f5LfWeoGQ7ekeofSvvTEWGk//vhj/EIk3XfffWGjjTYKp556ajjxxBMNU4pefvnl/KRHlAGnUQ3RsmVL/74oH5wJ3TvuuGPYY4894mR7bdu2jecPYfuTTz6Js1ZPmDDB/xfVY/zd2GmnncKkSZNi4y5DV6iEYPjBhhtuGCut/M4y92tc2xsgSbMbZXvDhg2LX3bSvVGUiH711VdhkUUW8aDUY5R8UjrMOG5mKl977bVLaqxZeeWVZ/OWqjbceeedYcSIEfHyToWa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"/>
+</div>
+</div>
+<div class="jp-OutputArea-child">
+<div class="jp-OutputPrompt jp-OutputArea-prompt"></div>
+<div class="jp-RenderedText jp-OutputArea-output" data-mime-type="text/plain" tabindex="0">
+<pre>multi_hop 汇总：
+</pre>
+</div>
+</div>
+<div class="jp-OutputArea-child">
+<div class="jp-OutputPrompt jp-OutputArea-prompt"></div>
+<div class="jp-RenderedHTMLCommon jp-RenderedHTML jp-OutputArea-output" data-mime-type="text/html" tabindex="0">
+<div>
+<style scoped="">
+    .dataframe tbody tr th:only-of-type {
+        vertical-align: middle;
+    }
+
+    .dataframe tbody tr th {
+        vertical-align: top;
+    }
+
+    .dataframe thead th {
+        text-align: right;
+    }
+</style>
+<table border="1" class="dataframe">
+<thead>
+<tr style="text-align: right;">
+<th></th>
+<th>model</th>
+<th>n</th>
+<th>em_pct</th>
+<th>contains_pct</th>
+<th>contains_ci_low_pct</th>
+<th>contains_ci_high_pct</th>
+<th>avg_latency_s</th>
+<th>avg_response_chars</th>
+<th>avg_completion_tokens</th>
+<th>total_cost_cny</th>
+<th>cost_per_contains_hit_cny</th>
+<th>cost_per_em_hit_cny</th>
+<th>contains_per_1k_output_tokens</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<th>0</th>
+<td>DeepSeek-V3 (API: deepseek-chat)</td>
+<td>4</td>
+<td>50.0</td>
+<td>50.0</td>
+<td>15.0</td>
+<td>85.0</td>
+<td>0.66</td>
+<td>5.2</td>
+<td>3.2</td>
+<td>0.0005</td>
+<td>0.0002</td>
+<td>0.0002</td>
+<td>145.83</td>
+</tr>
+<tr>
+<th>1</th>
+<td>Kimi (Moonshot, API: moonshot-v1-128k)</td>
+<td>4</td>
+<td>25.0</td>
+<td>50.0</td>
+<td>15.0</td>
+<td>85.0</td>
+<td>0.64</td>
+<td>8.5</td>
+<td>7.2</td>
+<td>0.0312</td>
+<td>0.0156</td>
+<td>0.0312</td>
+<td>62.50</td>
+</tr>
+<tr>
+<th>2</th>
+<td>Qwen-Long (API: qwen-long)</td>
+<td>4</td>
+<td>50.0</td>
+<td>50.0</td>
+<td>15.0</td>
+<td>85.0</td>
+<td>0.51</td>
+<td>5.0</td>
+<td>4.8</td>
+<td>0.0020</td>
+<td>0.0010</td>
+<td>0.0010</td>
+<td>100.00</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+</div>
+<div class="jp-OutputArea-child">
+<div class="jp-OutputPrompt jp-OutputArea-prompt"></div>
+<div class="jp-RenderedText jp-OutputArea-output" data-mime-type="text/plain" tabindex="0">
+<pre>按领域拆分：
+</pre>
+</div>
+</div>
+<div class="jp-OutputArea-child">
+<div class="jp-OutputPrompt jp-OutputArea-prompt"></div>
+<div class="jp-RenderedHTMLCommon jp-RenderedHTML jp-OutputArea-output" data-mime-type="text/html" tabindex="0">
+<div>
+<style scoped="">
+    .dataframe tbody tr th:only-of-type {
+        vertical-align: middle;
+    }
+
+    .dataframe tbody tr th {
+        vertical-align: top;
+    }
+
+    .dataframe thead th {
+        text-align: right;
+    }
+</style>
+<table border="1" class="dataframe">
+<thead>
+<tr style="text-align: right;">
+<th></th>
+<th>model</th>
+<th>domain</th>
+<th>n</th>
+<th>em_pct</th>
+<th>contains_pct</th>
+<th>contains_ci_low_pct</th>
+<th>contains_ci_high_pct</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<th>0</th>
+<td>DeepSeek-V3 (API: deepseek-chat)</td>
+<td>finance</td>
+<td>1</td>
+<td>100.0</td>
+<td>100.0</td>
+<td>20.7</td>
+<td>100.0</td>
+</tr>
+<tr>
+<th>4</th>
+<td>Kimi (Moonshot, API: moonshot-v1-128k)</td>
+<td>finance</td>
+<td>1</td>
+<td>100.0</td>
+<td>100.0</td>
+<td>20.7</td>
+<td>100.0</td>
+</tr>
+<tr>
+<th>8</th>
+<td>Qwen-Long (API: qwen-long)</td>
+<td>finance</td>
+<td>1</td>
+<td>100.0</td>
+<td>100.0</td>
+<td>20.7</td>
+<td>100.0</td>
+</tr>
+<tr>
+<th>1</th>
+<td>DeepSeek-V3 (API: deepseek-chat)</td>
+<td>healthcare</td>
+<td>1</td>
+<td>0.0</td>
+<td>0.0</td>
+<td>0.0</td>
+<td>79.3</td>
+</tr>
+<tr>
+<th>5</th>
+<td>Kimi (Moonshot, API: moonshot-v1-128k)</td>
+<td>healthcare</td>
+<td>1</td>
+<td>0.0</td>
+<td>0.0</td>
+<td>0.0</td>
+<td>79.3</td>
+</tr>
+<tr>
+<th>9</th>
+<td>Qwen-Long (API: qwen-long)</td>
+<td>healthcare</td>
+<td>1</td>
+<td>0.0</td>
+<td>0.0</td>
+<td>0.0</td>
+<td>79.3</td>
+</tr>
+<tr>
+<th>2</th>
+<td>DeepSeek-V3 (API: deepseek-chat)</td>
+<td>manufacturing</td>
+<td>1</td>
+<td>100.0</td>
+<td>100.0</td>
+<td>20.7</td>
+<td>100.0</td>
+</tr>
+<tr>
+<th>6</th>
+<td>Kimi (Moonshot, API: moonshot-v1-128k)</td>
+<td>manufacturing</td>
+<td>1</td>
+<td>0.0</td>
+<td>100.0</td>
+<td>20.7</td>
+<td>100.0</td>
+</tr>
+<tr>
+<th>10</th>
+<td>Qwen-Long (API: qwen-long)</td>
+<td>manufacturing</td>
+<td>1</td>
+<td>100.0</td>
+<td>100.0</td>
+<td>20.7</td>
+<td>100.0</td>
+</tr>
+<tr>
+<th>3</th>
+<td>DeepSeek-V3 (API: deepseek-chat)</td>
+<td>retail</td>
+<td>1</td>
+<td>0.0</td>
+<td>0.0</td>
+<td>0.0</td>
+<td>79.3</td>
+</tr>
+<tr>
+<th>7</th>
+<td>Kimi (Moonshot, API: moonshot-v1-128k)</td>
+<td>retail</td>
+<td>1</td>
+<td>0.0</td>
+<td>0.0</td>
+<td>0.0</td>
+<td>79.3</td>
+</tr>
+<tr>
+<th>11</th>
+<td>Qwen-Long (API: qwen-long)</td>
+<td>retail</td>
+<td>1</td>
+<td>0.0</td>
+<td>0.0</td>
+<td>0.0</td>
+<td>79.3</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+</div>
+<div class="jp-OutputArea-child">
+<div class="jp-OutputPrompt jp-OutputArea-prompt"></div>
+<div class="jp-RenderedText jp-OutputArea-output" data-mime-type="text/plain" tabindex="0">
+<pre>multi_hop badcase taxonomy：
+</pre>
+</div>
+</div>
+<div class="jp-OutputArea-child">
+<div class="jp-OutputPrompt jp-OutputArea-prompt"></div>
+<div class="jp-RenderedHTMLCommon jp-RenderedHTML jp-OutputArea-output" data-mime-type="text/html" tabindex="0">
+<div>
+<style scoped="">
+    .dataframe tbody tr th:only-of-type {
+        vertical-align: middle;
+    }
+
+    .dataframe tbody tr th {
+        vertical-align: top;
+    }
+
+    .dataframe thead th {
+        text-align: right;
+    }
+</style>
+<table border="1" class="dataframe">
+<thead>
+<tr style="text-align: right;">
+<th></th>
+<th>model</th>
+<th>badcase_taxonomy</th>
+<th>n</th>
+<th>contains_failures</th>
+<th>em_only_misses</th>
+<th>share_pct</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<th>0</th>
+<td>DeepSeek-V3 (API: deepseek-chat)</td>
+<td>多跳推理链条或计算失败</td>
+<td>2</td>
+<td>2</td>
+<td>0</td>
+<td>28.6</td>
+</tr>
+<tr>
+<th>1</th>
+<td>Kimi (Moonshot, API: moonshot-v1-128k)</td>
+<td>多跳推理链条或计算失败</td>
+<td>2</td>
+<td>2</td>
+<td>0</td>
+<td>28.6</td>
+</tr>
+<tr>
+<th>3</th>
+<td>Qwen-Long (API: qwen-long)</td>
+<td>多跳推理链条或计算失败</td>
+<td>2</td>
+<td>2</td>
+<td>0</td>
+<td>28.6</td>
+</tr>
+<tr>
+<th>2</th>
+<td>Kimi (Moonshot, API: moonshot-v1-128k)</td>
+<td>输出冗余但包含正确答案</td>
+<td>1</td>
+<td>0</td>
+<td>1</td>
+<td>14.3</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+</div>
+<div class="jp-OutputArea-child">
+<div class="jp-OutputPrompt jp-OutputArea-prompt"></div>
+<div class="jp-RenderedText jp-OutputArea-output" data-mime-type="text/plain" tabindex="0">
+<pre>multi_hop 逐条结果：
+</pre>
+</div>
+</div>
+<div class="jp-OutputArea-child">
+<div class="jp-OutputPrompt jp-OutputArea-prompt"></div>
+<div class="jp-RenderedHTMLCommon jp-RenderedHTML jp-OutputArea-output" data-mime-type="text/html" tabindex="0">
+<div>
+<style scoped="">
+    .dataframe tbody tr th:only-of-type {
+        vertical-align: middle;
+    }
+
+    .dataframe tbody tr th {
+        vertical-align: top;
+    }
+
+    .dataframe thead th {
+        text-align: right;
+    }
+</style>
+<table border="1" class="dataframe">
+<thead>
+<tr style="text-align: right;">
+<th></th>
+<th>model</th>
+<th>domain</th>
+<th>difficulty</th>
+<th>question</th>
+<th>expected_answer</th>
+<th>model_response</th>
+<th>contains_score</th>
+<th>badcase_taxonomy</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<th>1050</th>
+<td>DeepSeek-V3 (API: deepseek-chat)</td>
+<td>finance</td>
+<td>medium</td>
+<td>按照计划，2025 年第一季度对应的研发费用预算约是多少？</td>
+<td>9.45亿元</td>
+<td>9.45亿元</td>
+<td>1</td>
+<td>多跳推理链条或计算失败</td>
+</tr>
+<tr>
+<th>1052</th>
+<td>DeepSeek-V3 (API: deepseek-chat)</td>
+<td>healthcare</td>
+<td>hard</td>
+<td>按质控要求，夜班样本最晚应在什么时间前回传结果？</td>
+<td>23:30前</td>
+<td>23:30</td>
+<td>0</td>
+<td>多跳推理链条或计算失败</td>
+</tr>
+<tr>
+<th>1051</th>
+<td>DeepSeek-V3 (API: deepseek-chat)</td>
+<td>manufacturing</td>
+<td>medium</td>
+<td>按标准产能估算，A5 产线一天可生产多少件？</td>
+<td>2520件</td>
+<td>2520件</td>
+<td>1</td>
+<td>多跳推理链条或计算失败</td>
+</tr>
+<tr>
+<th>1053</th>
+<td>DeepSeek-V3 (API: deepseek-chat)</td>
+<td>retail</td>
+<td>hard</td>
+<td>按样板计划估算，本月应有多少名新会员在首月完成复购？</td>
+<td>1536人</td>
+<td>1536名</td>
+<td>0</td>
+<td>多跳推理链条或计算失败</td>
+</tr>
+<tr>
+<th>1054</th>
+<td>Kimi (Moonshot, API: moonshot-v1-128k)</td>
+<td>finance</td>
+<td>medium</td>
+<td>按照计划，2025 年第一季度对应的研发费用预算约是多少？</td>
+<td>9.45亿元</td>
+<td>9.45亿元</td>
+<td>1</td>
+<td>多跳推理链条或计算失败</td>
+</tr>
+<tr>
+<th>1056</th>
+<td>Kimi (Moonshot, API: moonshot-v1-128k)</td>
+<td>healthcare</td>
+<td>hard</td>
+<td>按质控要求，夜班样本最晚应在什么时间前回传结果？</td>
+<td>23:30前</td>
+<td>23:30</td>
+<td>0</td>
+<td>多跳推理链条或计算失败</td>
+</tr>
+<tr>
+<th>1055</th>
+<td>Kimi (Moonshot, API: moonshot-v1-128k)</td>
+<td>manufacturing</td>
+<td>medium</td>
+<td>按标准产能估算，A5 产线一天可生产多少件？</td>
+<td>2520件</td>
+<td>A5产线一天可生产2520件。</td>
+<td>1</td>
+<td>输出冗余但包含正确答案</td>
+</tr>
+<tr>
+<th>1057</th>
+<td>Kimi (Moonshot, API: moonshot-v1-128k)</td>
+<td>retail</td>
+<td>hard</td>
+<td>按样板计划估算，本月应有多少名新会员在首月完成复购？</td>
+<td>1536人</td>
+<td>1536名新会员</td>
+<td>0</td>
+<td>多跳推理链条或计算失败</td>
+</tr>
+<tr>
+<th>1058</th>
+<td>Qwen-Long (API: qwen-long)</td>
+<td>finance</td>
+<td>medium</td>
+<td>按照计划，2025 年第一季度对应的研发费用预算约是多少？</td>
+<td>9.45亿元</td>
+<td>9.45亿元</td>
+<td>1</td>
+<td>多跳推理链条或计算失败</td>
+</tr>
+<tr>
+<th>1060</th>
+<td>Qwen-Long (API: qwen-long)</td>
+<td>healthcare</td>
+<td>hard</td>
+<td>按质控要求，夜班样本最晚应在什么时间前回传结果？</td>
+<td>23:30前</td>
+<td>23:30</td>
+<td>0</td>
+<td>多跳推理链条或计算失败</td>
+</tr>
+<tr>
+<th>1059</th>
+<td>Qwen-Long (API: qwen-long)</td>
+<td>manufacturing</td>
+<td>medium</td>
+<td>按标准产能估算，A5 产线一天可生产多少件？</td>
+<td>2520件</td>
+<td>2520件</td>
+<td>1</td>
+<td>多跳推理链条或计算失败</td>
+</tr>
+<tr>
+<th>1061</th>
+<td>Qwen-Long (API: qwen-long)</td>
+<td>retail</td>
+<td>hard</td>
+<td>按样板计划估算，本月应有多少名新会员在首月完成复购？</td>
+<td>1536人</td>
+<td>1536</td>
+<td>0</td>
+<td>多跳推理链条或计算失败</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+</div>
+<div class="jp-OutputArea-child">
+<div class="jp-OutputPrompt jp-OutputArea-prompt"></div>
+<div class="jp-RenderedText jp-OutputArea-output" data-mime-type="text/plain" tabindex="0">
+<pre>当前 multi_hop 只有 4 条人工设计的真实业务口径样本 / 模型，95% CI 仍然很宽，应把它视为已经正式纳入统一报告的 pilot slice，而不是最终排名。
+当前真实任务口径 pilot 样本：
+</pre>
+</div>
+</div>
+<div class="jp-OutputArea-child">
+<div class="jp-OutputPrompt jp-OutputArea-prompt"></div>
+<div class="jp-RenderedHTMLCommon jp-RenderedHTML jp-OutputArea-output" data-mime-type="text/html" tabindex="0">
+<div>
+<style scoped="">
+    .dataframe tbody tr th:only-of-type {
+        vertical-align: middle;
+    }
+
+    .dataframe tbody tr th {
+        vertical-align: top;
+    }
+
+    .dataframe thead th {
+        text-align: right;
+    }
+</style>
+<table border="1" class="dataframe">
+<thead>
+<tr style="text-align: right;">
+<th></th>
+<th>sample_id</th>
+<th>domain</th>
+<th>difficulty</th>
+<th>hops</th>
+<th>context_length</th>
+<th>question</th>
+<th>expected_answer</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<th>0</th>
+<td>v2-multihop-001</td>
+<td>finance</td>
+<td>medium</td>
+<td>2</td>
+<td>56</td>
+<td>按照计划，2025 年第一季度对应的研发费用预算约是多少？</td>
+<td>9.45亿元</td>
+</tr>
+<tr>
+<th>1</th>
+<td>v2-multihop-002</td>
+<td>manufacturing</td>
+<td>medium</td>
+<td>2</td>
+<td>47</td>
+<td>按标准产能估算，A5 产线一天可生产多少件？</td>
+<td>2520件</td>
+</tr>
+<tr>
+<th>2</th>
+<td>v2-multihop-003</td>
+<td>healthcare</td>
+<td>hard</td>
+<td>2</td>
+<td>60</td>
+<td>按质控要求，夜班样本最晚应在什么时间前回传结果？</td>
+<td>23:30前</td>
+</tr>
+<tr>
+<th>3</th>
+<td>v2-multihop-004</td>
+<td>retail</td>
+<td>hard</td>
+<td>2</td>
+<td>41</td>
+<td>按样板计划估算，本月应有多少名新会员在首月完成复购？</td>
+<td>1536人</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+</div>
+<div class="jp-OutputArea-child">
+<div class="jp-OutputPrompt jp-OutputArea-prompt"></div>
+<div class="jp-RenderedText jp-OutputArea-output" data-mime-type="text/plain" tabindex="0">
+<pre>真实任务子集扩充路线：
+</pre>
+</div>
+</div>
+<div class="jp-OutputArea-child">
+<div class="jp-OutputPrompt jp-OutputArea-prompt"></div>
+<div class="jp-RenderedHTMLCommon jp-RenderedHTML jp-OutputArea-output" data-mime-type="text/html" tabindex="0">
+<div>
+<style scoped="">
+    .dataframe tbody tr th:only-of-type {
+        vertical-align: middle;
+    }
+
+    .dataframe tbody tr th {
+        vertical-align: top;
+    }
+
+    .dataframe thead th {
+        text-align: right;
+    }
+</style>
+<table border="1" class="dataframe">
+<thead>
+<tr style="text-align: right;">
+<th></th>
+<th>subset</th>
+<th>target_samples</th>
+<th>design_goal</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<th>0</th>
+<td>长文档关键信息抽取</td>
+<td>12</td>
+<td>验证模型在长文档里定位并抽取关键数值/时间/实体的能力</td>
+</tr>
+<tr>
+<th>1</th>
+<td>中文财报 / 研报问答</td>
+<td>10</td>
+<td>验证模型能否在多指标并列时锁定目标财务口径</td>
+</tr>
+<tr>
+<th>2</th>
+<td>多段政策文本比对</td>
+<td>8</td>
+<td>验证跨段落条件对齐、例外条款识别和版本差异判断</td>
+</tr>
+<tr>
+<th>3</th>
+<td>客服知识库长上下文检索问答</td>
+<td>10</td>
+<td>验证真实 FAQ / SOP 语料里的检索定位与简洁作答</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+</div>
+<div class="jp-OutputArea-child">
+<div class="jp-OutputPrompt jp-OutputArea-prompt"></div>
+<div class="jp-RenderedHTMLCommon jp-RenderedMarkdown jp-OutputArea-output" data-mime-type="text/markdown" tabindex="0">
+<h2 id="8.-%E4%BC%98%E5%8C%96%E5%BB%BA%E8%AE%AE%E4%B8%8E%E6%95%B0%E6%8D%AE%E7%AD%96%E7%95%A5">8. 优化建议与数据策略<a class="anchor-link" href="#8.-%E4%BC%98%E5%8C%96%E5%BB%BA%E8%AE%AE%E4%B8%8E%E6%95%B0%E6%8D%AE%E7%AD%96%E7%95%A5">¶</a></h2>
+</div>
+</div>
+<div class="jp-OutputArea-child">
+<div class="jp-OutputPrompt jp-OutputArea-prompt"></div>
+<div class="jp-RenderedText jp-OutputArea-output" data-mime-type="text/plain" tabindex="0">
+<pre>1. numeric_confusable 当前平均 Contains 最低 (67.3%)，说明模型对相似数字 / 相邻口径区分仍弱，下一轮应补更多相似数值干扰样本，并把数字单位、时间、百分比混排进同一段上下文。
+2. Kimi 在 32K 下出现近似崩塌，Contains=0.0%，95% CI=[0.0, 5.2]，优先排查长上下文 prompt 模板、截断策略、以及模型是否稳定输出空响应。
+3. DeepSeek 的 Contains 明显高于 EM，gap=29.5pp，说明定位能力已经足够，但抽取格式仍不够稳定；下一轮应补格式约束、短答案 extraction-style prompt，以及更多“只返回目标值”的训练样本。
+4. multi-hop 已正式进入统一报告，但当前每模型只有 4 条样本，Contains 全部停在 50.0%%。下一步应把 real-task slice 扩到 30-50 条，并把中间推理链、单位换算、时间约束等失败模式单独标注。
+5. 当前最常见的 badcase 类型是“输出冗余但包含正确答案”（35.1%）。这意味着后续优化不能只盯整体准确率，还需要把该类样本单独做回归集。
+</pre>
+</div>
+</div>
+</div>
+</div>
 </div>
 <div class="jp-Cell jp-MarkdownCell jp-Notebook-cell" id="cell-id=a505a997">
 <div class="jp-Cell-inputWrapper" tabindex="0">
@@ -8736,28 +10351,30 @@ Qwen-Long (API: qwen-long)                 70     70     70     70     70
 </div>
 <div class="jp-InputArea jp-Cell-inputArea"><div class="jp-InputPrompt jp-InputArea-prompt">
 </div><div class="jp-RenderedHTMLCommon jp-RenderedMarkdown jp-MarkdownOutput" data-mime-type="text/markdown">
-<h2 id="6.-%E5%86%99%E4%BD%9C%E6%8F%90%E7%BA%B2">6. 写作提纲<a class="anchor-link" href="#6.-%E5%86%99%E4%BD%9C%E6%8F%90%E7%BA%B2">¶</a></h2><h3 id="6.1-%E7%A8%B3%E5%AE%9A%E6%80%A7">6.1 稳定性<a class="anchor-link" href="#6.1-%E7%A8%B3%E5%AE%9A%E6%80%A7">¶</a></h3><ul>
-<li>先看 16K / 32K 的 Wilson 区间是否明显收窄，再判断高低点是不是稳定现象。</li>
-<li>如果某个长度的区间依然很宽，不要把单次峰值写成模型能力结论。</li>
-<li>如果像 <code>kimi</code> 在 32K 下这样出现 0.0% 且区间上界仍然很低，可以明确写成“稳定失效信号”，不要弱化成随机波动。</li>
+<h2 id="9.-%E5%86%99%E4%BD%9C%E6%8F%90%E7%BA%B2">9. 写作提纲<a class="anchor-link" href="#9.-%E5%86%99%E4%BD%9C%E6%8F%90%E7%BA%B2">¶</a></h2><h3 id="9.1-NIAH-%E4%B8%BB%E7%BB%93%E8%AE%BA">9.1 NIAH 主结论<a class="anchor-link" href="#9.1-NIAH-%E4%B8%BB%E7%BB%93%E8%AE%BA">¶</a></h3><ul>
+<li>先给 NIAH 总体强弱：谁的 Contains 最高，谁的 EM 更稳，谁的单位命中成本最低。</li>
+<li>对 DeepSeek 要明确区分“定位能力强”和“输出格式不够收敛”，不要只写成泛化的准确率优势。</li>
+<li>对 Kimi 32K 的结论要保留 Wilson 区间，不要把稳定失效信号弱化成一次随机波动。</li>
 </ul>
-<h3 id="6.2-%E5%8F%98%E4%BD%93%E9%9A%BE%E5%BA%A6%E6%8E%92%E5%BA%8F">6.2 变体难度排序<a class="anchor-link" href="#6.2-%E5%8F%98%E4%BD%93%E9%9A%BE%E5%BA%A6%E6%8E%92%E5%BA%8F">¶</a></h3><ul>
-<li>对比 <code>style_aligned</code>、<code>numeric_confusable</code>、<code>multi_key</code> 的 Contains 准确率和成本。</li>
-<li>当前应优先把 <code>numeric_confusable</code> 写成 headline insight，因为它比另外两类 needle 更稳定地拉低准确率。</li>
+<h3 id="9.2-Badcase-Taxonomy">9.2 Badcase Taxonomy<a class="anchor-link" href="#9.2-Badcase-Taxonomy">¶</a></h3><ul>
+<li>单独写 taxonomy 排名，至少点出“输出冗余但包含正确答案”“被相似数字干扰”“多 key 条件下定位失败”三类主导错误。</li>
+<li>每类错误给 1 条代表性样本，形成“统计 + 例子”的桥接。</li>
+<li>把 taxonomy 明确转成优化动作，而不是停在失败描述上。</li>
 </ul>
-<h3 id="6.3-%E5%87%86%E7%A1%AE%E7%8E%87---%E8%BE%93%E5%87%BA---%E6%88%90%E6%9C%AC%E6%9D%83%E8%A1%A1">6.3 准确率 - 输出 - 成本权衡<a class="anchor-link" href="#6.3-%E5%87%86%E7%A1%AE%E7%8E%87---%E8%BE%93%E5%87%BA---%E6%88%90%E6%9C%AC%E6%9D%83%E8%A1%A1">¶</a></h3><ul>
-<li>结合 <code>avg_completion_tokens</code>、<code>avg_response_chars</code>、<code>cost_per_contains_hit_cny</code>。</li>
-<li>准确率接近时，优先看谁更短、更稳、更省。</li>
-<li>长度图优先使用带 95% CI 的版本，避免把 16K / 32K 的局部反弹写成过强结论。</li>
+<h3 id="9.3-multi-hop-%E4%B8%8E%E7%9C%9F%E5%AE%9E%E4%BB%BB%E5%8A%A1%E5%8F%A3%E5%BE%84-Pilot">9.3 multi-hop 与真实任务口径 Pilot<a class="anchor-link" href="#9.3-multi-hop-%E4%B8%8E%E7%9C%9F%E5%AE%9E%E4%BB%BB%E5%8A%A1%E5%8F%A3%E5%BE%84-Pilot">¶</a></h3><ul>
+<li>说明 multi_hop 已正式并入统一报告，但当前只有 4 条样本 / 模型，统计上仍属于 pilot。</li>
+<li>重点写“所有模型 Contains 都是 50.0%，但区间仍宽”，防止过度解读当前排序。</li>
+<li>把 multi_hop 明确定位为 real-task slice 的第一批正式结果，为后续 30-50 条扩充铺路。</li>
 </ul>
-<h3 id="6.4-%E6%89%A9%E5%B1%95%E4%BB%BB%E5%8A%A1">6.4 扩展任务<a class="anchor-link" href="#6.4-%E6%89%A9%E5%B1%95%E4%BB%BB%E5%8A%A1">¶</a></h3><ul>
-<li>如果已经跑了 <code>multi_hop</code>，单独比较其与 NIAH 的准确率和成本差异。</li>
-<li>如果还没跑，明确写成“数据集已准备，评测待执行”，不要冒充已有结论。</li>
+<h3 id="9.4-%E4%BC%98%E5%8C%96%E5%BB%BA%E8%AE%AE%E4%B8%8E%E6%95%B0%E6%8D%AE%E7%AD%96%E7%95%A5">9.4 优化建议与数据策略<a class="anchor-link" href="#9.4-%E4%BC%98%E5%8C%96%E5%BB%BA%E8%AE%AE%E4%B8%8E%E6%95%B0%E6%8D%AE%E7%AD%96%E7%95%A5">¶</a></h3><ul>
+<li><code>numeric_confusable</code> 最难，建议扩充相似数字、单位、时间、百分比混排样本。</li>
+<li>32K 某模型崩塌，建议排查 prompt 模板、截断逻辑、空响应比例和长上下文策略。</li>
+<li>DeepSeek Contains 高但 EM gap 大，建议补“只返回目标值”的 extraction-style 约束和训练样本。</li>
 </ul>
-<h3 id="6.5-%E4%B8%8B%E4%B8%80%E8%BD%AE%E5%8A%A8%E4%BD%9C">6.5 下一轮动作<a class="anchor-link" href="#6.5-%E4%B8%8B%E4%B8%80%E8%BD%AE%E5%8A%A8%E4%BD%9C">¶</a></h3><ol>
-<li>先补齐 100% 覆盖率，再导出对外版报告。</li>
-<li>再补跑 <code>multi_hop</code>，把跨领域推理纳入同一份摘要表。</li>
-<li>如果 16K / 32K 仍波动大，再考虑提高 repeats 或缩小回答自由度。</li>
+<h3 id="9.5-%E4%B8%8B%E4%B8%80%E8%BD%AE%E5%8A%A8%E4%BD%9C">9.5 下一轮动作<a class="anchor-link" href="#9.5-%E4%B8%8B%E4%B8%80%E8%BD%AE%E5%8A%A8%E4%BD%9C">¶</a></h3><ol>
+<li>把 real-task pilot 从 4 条扩到 30-50 条，并覆盖长文档抽取、财报问答、政策比对、知识库检索四类场景。</li>
+<li>为 badcase taxonomy 建专门回归集，至少保证相似数字干扰、多 key 定位、冗余输出三类都可单独回放。</li>
+<li>在导出对外版报告前，把 README、报告 HTML、执行版 notebook 保持同一份结论口径。</li>
 </ol>
 </div>
 </div>
@@ -8767,7 +10384,7 @@ Qwen-Long (API: qwen-long)                 70     70     70     70     70
 <div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
 </div>
 <div class="jp-InputArea jp-Cell-inputArea">
-<div class="jp-InputPrompt jp-InputArea-prompt">In [7]:</div>
+<div class="jp-InputPrompt jp-InputArea-prompt">In [8]:</div>
 <div class="jp-CodeMirrorEditor jp-Editor jp-InputArea-editor" data-type="inline">
 <div class="cm-editor cm-s-jupyter">
 <div class="highlight hl-ipython3"><pre><span></span><span class="k">if</span> <span class="n">scored_path</span><span class="o">.</span><span class="n">exists</span><span class="p">()</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">model_summary</span><span class="o">.</span><span class="n">empty</span><span class="p">:</span>
@@ -8778,7 +10395,7 @@ Qwen-Long (API: qwen-long)                 70     70     70     70     70
     <span class="n">most_verbose</span> <span class="o">=</span> <span class="n">model_summary</span><span class="o">.</span><span class="n">sort_values</span><span class="p">(</span><span class="s1">'avg_completion_tokens'</span><span class="p">,</span> <span class="n">ascending</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span><span class="o">.</span><span class="n">iloc</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
 
     <span class="nb">print</span><span class="p">(</span>
-        <span class="sa">f</span><span class="s1">'1. 当前 Contains 最强模型是 </span><span class="si">{</span><span class="n">format_model_name</span><span class="p">(</span><span class="n">best_contains</span><span class="p">[</span><span class="s2">"model"</span><span class="p">])</span><span class="si">}</span><span class="s1">，'</span>
+        <span class="sa">f</span><span class="s1">'1. 当前 NIAH Contains 最强模型是 </span><span class="si">{</span><span class="n">format_model_name</span><span class="p">(</span><span class="n">best_contains</span><span class="p">[</span><span class="s2">"model"</span><span class="p">])</span><span class="si">}</span><span class="s1">，'</span>
         <span class="sa">f</span><span class="s1">'准确率 </span><span class="si">{</span><span class="n">best_contains</span><span class="p">[</span><span class="s2">"contains_pct"</span><span class="p">]</span><span class="si">:</span><span class="s1">.1f</span><span class="si">}</span><span class="s1">%，'</span>
         <span class="sa">f</span><span class="s1">'95% CI 下界 </span><span class="si">{</span><span class="n">best_contains</span><span class="p">[</span><span class="s2">"contains_ci_low_pct"</span><span class="p">]</span><span class="si">:</span><span class="s1">.1f</span><span class="si">}</span><span class="s1">%。'</span>
     <span class="p">)</span>
@@ -8791,6 +10408,13 @@ Qwen-Long (API: qwen-long)                 70     70     70     70     70
         <span class="sa">f</span><span class="s1">'平均 completion </span><span class="si">{</span><span class="n">most_verbose</span><span class="p">[</span><span class="s2">"avg_completion_tokens"</span><span class="p">]</span><span class="si">:</span><span class="s1">.1f</span><span class="si">}</span><span class="s1"> tokens。'</span>
     <span class="p">)</span>
 
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">niah_badcase_summary_overall</span><span class="o">.</span><span class="n">empty</span><span class="p">:</span>
+        <span class="n">top_badcase</span> <span class="o">=</span> <span class="n">niah_badcase_summary_overall</span><span class="o">.</span><span class="n">sort_values</span><span class="p">(</span><span class="s1">'n'</span><span class="p">,</span> <span class="n">ascending</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span><span class="o">.</span><span class="n">iloc</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+        <span class="nb">print</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s1">'4. 当前最常见的 badcase 类型是“</span><span class="si">{</span><span class="n">top_badcase</span><span class="p">[</span><span class="s2">"badcase_taxonomy"</span><span class="p">]</span><span class="si">}</span><span class="s1">”，'</span>
+            <span class="sa">f</span><span class="s1">'占全部 badcase 的 </span><span class="si">{</span><span class="n">top_badcase</span><span class="p">[</span><span class="s2">"share_pct"</span><span class="p">]</span><span class="si">:</span><span class="s1">.1f</span><span class="si">}</span><span class="s1">%。'</span>
+        <span class="p">)</span>
+
     <span class="k">if</span> <span class="ow">not</span> <span class="n">variant_summary</span><span class="o">.</span><span class="n">empty</span><span class="p">:</span>
         <span class="n">variant_order</span> <span class="o">=</span> <span class="n">variant_summary</span><span class="o">.</span><span class="n">groupby</span><span class="p">(</span><span class="s1">'variant'</span><span class="p">)[</span><span class="s1">'contains_pct'</span><span class="p">]</span><span class="o">.</span><span class="n">mean</span><span class="p">()</span><span class="o">.</span><span class="n">sort_values</span><span class="p">()</span>
         <span class="n">hardest_variant</span> <span class="o">=</span> <span class="n">variant_order</span><span class="o">.</span><span class="n">index</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
@@ -8798,7 +10422,7 @@ Qwen-Long (API: qwen-long)                 70     70     70     70     70
         <span class="n">hardest_variant_score</span> <span class="o">=</span> <span class="n">variant_order</span><span class="o">.</span><span class="n">iloc</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
         <span class="n">easiest_variant_score</span> <span class="o">=</span> <span class="n">variant_order</span><span class="o">.</span><span class="n">iloc</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span>
         <span class="nb">print</span><span class="p">(</span>
-            <span class="sa">f</span><span class="s1">'4. 平均来看最难的变体是 </span><span class="si">{</span><span class="n">hardest_variant</span><span class="si">}</span><span class="s1"> (</span><span class="si">{</span><span class="n">hardest_variant_score</span><span class="si">:</span><span class="s1">.1f</span><span class="si">}</span><span class="s1">%)，'</span>
+            <span class="sa">f</span><span class="s1">'5. 平均来看最难的变体是 </span><span class="si">{</span><span class="n">hardest_variant</span><span class="si">}</span><span class="s1"> (</span><span class="si">{</span><span class="n">hardest_variant_score</span><span class="si">:</span><span class="s1">.1f</span><span class="si">}</span><span class="s1">%)，'</span>
             <span class="sa">f</span><span class="s1">'最容易的变体是 </span><span class="si">{</span><span class="n">easiest_variant</span><span class="si">}</span><span class="s1"> (</span><span class="si">{</span><span class="n">easiest_variant_score</span><span class="si">:</span><span class="s1">.1f</span><span class="si">}</span><span class="s1">%)。'</span>
         <span class="p">)</span>
         <span class="k">if</span> <span class="n">hardest_variant</span> <span class="o">==</span> <span class="s1">'numeric_confusable'</span><span class="p">:</span>
@@ -8806,7 +10430,7 @@ Qwen-Long (API: qwen-long)                 70     70     70     70     70
 
     <span class="n">stability_focus</span> <span class="o">=</span> <span class="n">length_summary</span><span class="p">[</span><span class="n">length_summary</span><span class="p">[</span><span class="s1">'context_length'</span><span class="p">]</span><span class="o">.</span><span class="n">isin</span><span class="p">([</span><span class="mi">16000</span><span class="p">,</span> <span class="mi">32000</span><span class="p">])]</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
     <span class="k">if</span> <span class="ow">not</span> <span class="n">stability_focus</span><span class="o">.</span><span class="n">empty</span><span class="p">:</span>
-        <span class="nb">print</span><span class="p">(</span><span class="s1">'5. 16K / 32K 观察：'</span><span class="p">)</span>
+        <span class="nb">print</span><span class="p">(</span><span class="s1">'6. 16K / 32K 观察：'</span><span class="p">)</span>
         <span class="k">for</span> <span class="n">context_length</span> <span class="ow">in</span> <span class="p">[</span><span class="mi">16000</span><span class="p">,</span> <span class="mi">32000</span><span class="p">]:</span>
             <span class="n">sub</span> <span class="o">=</span> <span class="n">stability_focus</span><span class="p">[</span><span class="n">stability_focus</span><span class="p">[</span><span class="s1">'context_length'</span><span class="p">]</span> <span class="o">==</span> <span class="n">context_length</span><span class="p">]</span>
             <span class="k">if</span> <span class="n">sub</span><span class="o">.</span><span class="n">empty</span><span class="p">:</span>
@@ -8831,12 +10455,21 @@ Qwen-Long (API: qwen-long)                 70     70     70     70     70
             <span class="p">)</span>
             <span class="nb">print</span><span class="p">(</span><span class="s1">'   这个区间上界仍然很低，更接近稳定失效，而不是一次偶然波动。'</span><span class="p">)</span>
 
-    <span class="k">if</span> <span class="ow">not</span> <span class="n">task_summary</span><span class="o">.</span><span class="n">empty</span> <span class="ow">and</span> <span class="s1">'multi_hop'</span> <span class="ow">in</span> <span class="n">task_summary</span><span class="p">[</span><span class="s1">'task'</span><span class="p">]</span><span class="o">.</span><span class="n">values</span><span class="p">:</span>
-        <span class="n">multi_hop_summary</span> <span class="o">=</span> <span class="n">with_model_labels</span><span class="p">(</span><span class="n">task_summary</span><span class="p">[</span><span class="n">task_summary</span><span class="p">[</span><span class="s1">'task'</span><span class="p">]</span> <span class="o">==</span> <span class="s1">'multi_hop'</span><span class="p">])</span>
-        <span class="nb">print</span><span class="p">(</span><span class="s1">'6. multi_hop 已有结果，可直接纳入 V2 报告。'</span><span class="p">)</span>
-        <span class="n">display</span><span class="p">(</span><span class="n">multi_hop_summary</span><span class="p">)</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">multihop_summary</span><span class="o">.</span><span class="n">empty</span><span class="p">:</span>
+        <span class="nb">print</span><span class="p">(</span><span class="s1">'7. multi_hop 已正式进入统一报告。'</span><span class="p">)</span>
+        <span class="nb">print</span><span class="p">(</span>
+            <span class="s1">'   当前 3 个模型在 pilot 上的 Contains 都是 50.0%，但每模型只有 4 条样本，'</span>
+            <span class="s1">'95% CI 仍然是 [15.0, 85.0]，因此更适合作为 real-task slice 的起点，而不是最终排序依据。'</span>
+        <span class="p">)</span>
+        <span class="n">display</span><span class="p">(</span><span class="n">with_model_labels</span><span class="p">(</span><span class="n">multihop_summary</span><span class="p">))</span>
     <span class="k">else</span><span class="p">:</span>
-        <span class="nb">print</span><span class="p">(</span><span class="s1">'6. multi_hop 结果尚未进入 scored_results.csv，当前报告仍以 NIAH 为主。'</span><span class="p">)</span>
+        <span class="nb">print</span><span class="p">(</span><span class="s1">'7. multi_hop 结果尚未进入 scored_results.csv。'</span><span class="p">)</span>
+
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">real_task_pilot_df</span><span class="o">.</span><span class="n">empty</span><span class="p">:</span>
+        <span class="nb">print</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s1">'8. 当前 real-task pilot 已覆盖 </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">real_task_pilot_df</span><span class="p">)</span><span class="si">}</span><span class="s1"> 条样本，涉及 '</span>
+            <span class="sa">f</span><span class="s1">'</span><span class="si">{</span><span class="n">real_task_pilot_df</span><span class="p">[</span><span class="s2">"domain"</span><span class="p">]</span><span class="o">.</span><span class="n">nunique</span><span class="p">()</span><span class="si">}</span><span class="s1"> 个领域。下一步可按 roadmap 扩到 30-50 条。'</span>
+        <span class="p">)</span>
 </pre></div>
 </div>
 </div>
@@ -8850,17 +10483,116 @@ Qwen-Long (API: qwen-long)                 70     70     70     70     70
 <div class="jp-OutputPrompt jp-OutputArea-prompt"></div>
 <div class="jp-RenderedText jp-OutputArea-output" data-mime-type="text/plain" tabindex="0">
 <pre>自动摘要草稿：
-1. 当前 Contains 最强模型是 DeepSeek-V3 (API: deepseek-chat)，准确率 90.6%，95% CI 下界 87.1%。
+1. 当前 NIAH Contains 最强模型是 DeepSeek-V3 (API: deepseek-chat)，准确率 90.6%，95% CI 下界 87.1%。
 2. 当前单位命中成本最低的是 DeepSeek-V3 (API: deepseek-chat)，0.0057 CNY / contains hit。
 3. 当前输出最啰嗦的是 Qwen-Long (API: qwen-long)，平均 completion 5.5 tokens。
-4. 平均来看最难的变体是 numeric_confusable (67.3%)，最容易的变体是 style_aligned (84.5%)。
+4. 当前最常见的 badcase 类型是“输出冗余但包含正确答案”，占全部 badcase 的 35.1%。
+5. 平均来看最难的变体是 numeric_confusable (67.3%)，最容易的变体是 style_aligned (84.5%)。
    这说明相近数字 / 字符串干扰比 style 对齐或多 key 干扰更容易击穿检索稳定性。
-5. 16K / 32K 观察：
+6. 16K / 32K 观察：
    16000 chars: 最强 DeepSeek-V3 (API: deepseek-chat)=85.7%, 最弱 Kimi (Moonshot, API: moonshot-v1-128k)=74.3%, 差值 11.4pp
    32000 chars: 最强 DeepSeek-V3 (API: deepseek-chat)=98.6%, 最弱 Kimi (Moonshot, API: moonshot-v1-128k)=0.0%, 差值 98.6pp
    技术备注: Kimi (Moonshot, API: moonshot-v1-128k) 在 32000 chars 下 Contains=0.0%，95% CI=[0.0, 5.2]。
    这个区间上界仍然很低，更接近稳定失效，而不是一次偶然波动。
-6. multi_hop 结果尚未进入 scored_results.csv，当前报告仍以 NIAH 为主。
+7. multi_hop 已正式进入统一报告。
+   当前 3 个模型在 pilot 上的 Contains 都是 50.0%，但每模型只有 4 条样本，95% CI 仍然是 [15.0, 85.0]，因此更适合作为 real-task slice 的起点，而不是最终排序依据。
+</pre>
+</div>
+</div>
+<div class="jp-OutputArea-child">
+<div class="jp-OutputPrompt jp-OutputArea-prompt"></div>
+<div class="jp-RenderedHTMLCommon jp-RenderedHTML jp-OutputArea-output" data-mime-type="text/html" tabindex="0">
+<div>
+<style scoped="">
+    .dataframe tbody tr th:only-of-type {
+        vertical-align: middle;
+    }
+
+    .dataframe tbody tr th {
+        vertical-align: top;
+    }
+
+    .dataframe thead th {
+        text-align: right;
+    }
+</style>
+<table border="1" class="dataframe">
+<thead>
+<tr style="text-align: right;">
+<th></th>
+<th>model</th>
+<th>n</th>
+<th>em_pct</th>
+<th>contains_pct</th>
+<th>contains_ci_low_pct</th>
+<th>contains_ci_high_pct</th>
+<th>avg_latency_s</th>
+<th>avg_response_chars</th>
+<th>avg_completion_tokens</th>
+<th>total_cost_cny</th>
+<th>cost_per_contains_hit_cny</th>
+<th>cost_per_em_hit_cny</th>
+<th>contains_per_1k_output_tokens</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<th>0</th>
+<td>DeepSeek-V3 (API: deepseek-chat)</td>
+<td>4</td>
+<td>50.0</td>
+<td>50.0</td>
+<td>15.0</td>
+<td>85.0</td>
+<td>0.66</td>
+<td>5.2</td>
+<td>3.2</td>
+<td>0.0005</td>
+<td>0.0002</td>
+<td>0.0002</td>
+<td>145.83</td>
+</tr>
+<tr>
+<th>1</th>
+<td>Kimi (Moonshot, API: moonshot-v1-128k)</td>
+<td>4</td>
+<td>25.0</td>
+<td>50.0</td>
+<td>15.0</td>
+<td>85.0</td>
+<td>0.64</td>
+<td>8.5</td>
+<td>7.2</td>
+<td>0.0312</td>
+<td>0.0156</td>
+<td>0.0312</td>
+<td>62.50</td>
+</tr>
+<tr>
+<th>2</th>
+<td>Qwen-Long (API: qwen-long)</td>
+<td>4</td>
+<td>50.0</td>
+<td>50.0</td>
+<td>15.0</td>
+<td>85.0</td>
+<td>0.51</td>
+<td>5.0</td>
+<td>4.8</td>
+<td>0.0020</td>
+<td>0.0010</td>
+<td>0.0010</td>
+<td>100.00</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+</div>
+<div class="jp-OutputArea-child">
+<div class="jp-OutputPrompt jp-OutputArea-prompt"></div>
+<div class="jp-RenderedText jp-OutputArea-output" data-mime-type="text/plain" tabindex="0">
+<pre>8. 当前 real-task pilot 已覆盖 4 条样本，涉及 4 个领域。下一步可按 roadmap 扩到 30-50 条。
 </pre>
 </div>
 </div>

@@ -156,14 +156,49 @@ def run_eval_v2(
     return final_df
 
 
+def run_eval_bundle_v2(
+    config: dict,
+    model_keys: list[str],
+    output_dir: str,
+    resume: bool = True,
+) -> pd.DataFrame:
+    dataset_specs = [
+        (
+            "niah",
+            f"{config['data']['processed_dir']}/niah_dataset.jsonl",
+            config.get("eval", {}).get("niah", {}).get("num_samples"),
+        ),
+        (
+            "multi_hop",
+            f"{config['data']['processed_dir']}/multihop_dataset.jsonl",
+            config.get("eval", {}).get("multi_hop", {}).get("num_samples"),
+        ),
+    ]
+
+    latest_df = pd.DataFrame()
+    for task_name, dataset_path, max_samples in dataset_specs:
+        if not Path(dataset_path).exists():
+            print(f"ℹ️  V2 {task_name} 数据集不存在，跳过: {dataset_path}")
+            continue
+
+        print(f"\n{'=' * 72}\n开始执行 V2 任务: {task_name}\n{'=' * 72}")
+        latest_df = run_eval_v2(
+            dataset_path=dataset_path,
+            model_keys=model_keys,
+            config=config,
+            output_dir=output_dir,
+            max_samples=max_samples,
+            resume=resume,
+        )
+    return latest_df
+
+
 def main(config_path: str = "configs/eval_config_v2.yaml"):
     config = yaml.safe_load(open(config_path, encoding="utf-8"))
-    run_eval_v2(
-        dataset_path=f"{config['data']['processed_dir']}/niah_dataset.jsonl",
-        model_keys=["deepseek"],
+    run_eval_bundle_v2(
         config=config,
+        model_keys=["deepseek"],
         output_dir=config["results"]["raw_dir"],
-        max_samples=None,
         resume=True,
     )
 
