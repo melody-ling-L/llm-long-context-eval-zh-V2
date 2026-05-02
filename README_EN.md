@@ -30,9 +30,17 @@ Compared with V1, V2:
 ## Key Takeaways
 
 - DeepSeek is the strongest overall V2 model on Contains and cost efficiency.
-- Qwen still has the best strict-match behavior, but with higher latency and cost.
-- `numeric_confusable` is the hardest V2 variant across models.
-- 16K vs 32K no longer shows a single shared trend: DeepSeek rebounds at 32K, Qwen stays stable, and Kimi collapses.
+- `numeric_confusable` is the hardest V2 variant across models, and should be treated as a headline robustness finding rather than a side detail.
+- Kimi does not just wobble at 32K: its Contains drops to 0.0%, and the Wilson 95% CI upper bound is only 5.2%, which looks much closer to a stable failure signal.
+- 16K vs 32K no longer shows a single shared trend: DeepSeek rebounds at 32K, Qwen stays broadly stable, and Kimi collapses.
+
+## Main Figures
+
+- `results/v2/figures/niah_heatmap_deepseek.png`
+- `results/v2/figures/niah_heatmap_kimi.png`
+- `results/v2/figures/niah_heatmap_qwen.png`
+- `results/v2/figures/accuracy_by_length_with_ci.png`
+- `results/v2/figures/efficiency_tradeoff.png`
 
 ## Main Artifacts
 
@@ -53,36 +61,12 @@ notebooks/v2/02_eval_runner_v2.ipynb
 notebooks/v2/03_analysis_visualization_v2.ipynb
 notebooks/v2/04_report_v2.ipynb
 ```
-# LLM Long-Context Evaluation Framework
 
-> A 4-dimension evaluation framework quantifying the **"Lost in the Middle"** phenomenon in Chinese LLMs
+## Current Limits
 
----
-
-## Overview
-
-This project evaluates how well leading LLMs (DeepSeek-V3, Kimi, Qwen-Long) actually utilize their claimed long-context windows:
-- Models claim 128K context — do they truly *use* it?
-- Does accuracy drop when information is buried in the **middle** of a document?
-
----
-
-## Evaluation Dimensions
-
-| Dimension | Description | Key Metric |
-|---|---|---|
-| **NIAH** | Needle in a Haystack — insert key facts at varying depths | Accuracy @depth × length |
-| **Multi-hop Reasoning** | Information scattered across the document, requires synthesis | Multi-hop Accuracy |
-| **Position Bias** | Accuracy difference for info at beginning / middle / end | Position Bias Score |
-| **Cross-model Comparison** | DeepSeek-V3 vs Kimi vs Qwen-Long | Δ Accuracy |
-
----
-
-## Results
-
-*(To be filled after experiments)*
-
----
+- The `multi_hop` dataset has already been generated to `data/processed/v2/multihop_dataset.jsonl`, but the public-facing conclusions are still NIAH-first.
+- The repository reflects one public V2 snapshot; the next meaningful extension is to add multi-hop results into the same summary layer.
+- Kimi's 32K failure now looks real enough to discuss directly, but root-cause analysis still needs a separate interface / prompting / context-handling audit.
 
 ## References
 
