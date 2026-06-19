@@ -37,6 +37,7 @@ FIGURES_DIR.mkdir(parents=True, exist_ok=True)
 MODEL_DISPLAY_NAMES = {
     "deepseek": "DeepSeek-V3 (API: deepseek-chat)",
     "kimi": "Kimi (Moonshot, API: moonshot-v1-128k)",
+    "kimi26": "Kimi 2.6 (API: kimi2.6-320K)",
     "qwen": "Qwen-Long (API: qwen-long)",
 }
 
@@ -51,6 +52,18 @@ def format_model_name(model: str) -> str:
     return MODEL_DISPLAY_NAMES.get(str(model), str(model))
 
 
+def _prepare_niah_df(df: pd.DataFrame, eval_valid_only: bool = True) -> pd.DataFrame:
+    """绘图用 NIAH 子集；默认仅 eval_valid（排除 content_filter / infra 失败）。"""
+    sub = df.copy()
+    if "task" in sub.columns:
+        sub = sub[sub["task"].fillna("niah") == "niah"]
+    if eval_valid_only:
+        from src.metrics_v2 import filter_eval_valid
+
+        sub = filter_eval_valid(sub)
+    return sub
+
+
 # ──────────────────────────────────────────────
 # 1. NIAH 热力图（静态）
 # ──────────────────────────────────────────────
@@ -61,12 +74,14 @@ def plot_niah_heatmap(
     score_col: str = "contains_score",
     save: bool = True,
     figures_dir: str | Path | None = None,
+    eval_valid_only: bool = True,
 ) -> plt.Figure:
     """
     绘制单个模型的 NIAH 热力图。
     行 = context_length，列 = depth_pct，颜色 = 准确率。
     """
-    sub = df[df["model"] == model].copy()
+    sub = _prepare_niah_df(df, eval_valid_only=eval_valid_only)
+    sub = sub[sub["model"] == model].copy()
     model_label = format_model_name(model)
     pivot = sub.pivot_table(
         index="context_length",
@@ -87,8 +102,9 @@ def plot_niah_heatmap(
         ax=ax,
         cbar_kws={"label": "准确率 (%)"},
     )
+    suffix = "（eval_valid）" if eval_valid_only else "（全量）"
     ax.set_title(
-        f"NIAH 热力图 — {model_label}\n"
+        f"NIAH 热力图 — {model_label}{suffix}\n"
         f"（列: Needle 插入深度 %，行: 上下文字符长度，格值: Contains Accuracy %）",
         fontsize=13,
         pad=14,
@@ -115,12 +131,14 @@ def plot_niah_heatmap_interactive(
     score_col: str = "contains_score",
     save_html: bool = True,
     figures_dir: str | Path | None = None,
+    eval_valid_only: bool = True,
 ) -> go.Figure:
     """
     生成 Plotly 交互式热力图，支持 hover 查看详情。
     在 Jupyter Notebook 中直接展示，也可导出 HTML。
     """
-    sub = df[df["model"] == model].copy()
+    sub = _prepare_niah_df(df, eval_valid_only=eval_valid_only)
+    sub = sub[sub["model"] == model].copy()
     model_label = format_model_name(model)
     pivot = (
         sub.pivot_table(
@@ -138,7 +156,7 @@ def plot_niah_heatmap_interactive(
         color_continuous_scale="RdYlGn",
         zmin=0,
         zmax=100,
-        title=f"NIAH 交互式热力图 — {model_label}",
+        title=f"NIAH 交互式热力图 — {model_label}" + ("（eval_valid）" if eval_valid_only else ""),
         labels={
             "x": "Needle 插入深度 (%)",
             "y": "上下文长度 (chars)",
@@ -166,12 +184,14 @@ def plot_accuracy_by_length(
     score_col: str = "contains_score",
     save: bool = True,
     figures_dir: str | Path | None = None,
+    eval_valid_only: bool = True,
 ) -> plt.Figure:
     """
     跨模型准确率随上下文长度变化的折线图。
     """
+    plot_df = _prepare_niah_df(df, eval_valid_only=eval_valid_only)
     grouped = (
-        df.groupby(["model", "context_length"])[score_col]
+        plot_df.groupby(["model", "context_length"])[score_col]
         .mean()
         .reset_index()
     )
@@ -192,7 +212,10 @@ def plot_accuracy_by_length(
 
     ax.set_xlabel("上下文长度 (chars)", fontsize=12)
     ax.set_ylabel("准确率 (%) — Contains Match", fontsize=12)
-    ax.set_title("跨模型 NIAH 准确率 vs 上下文长度", fontsize=14)
+    ax.set_title(
+        "跨模型 NIAH 准确率 vs 上下文长度" + ("（eval_valid）" if eval_valid_only else ""),
+        fontsize=14,
+    )
     ax.legend(fontsize=11)
     ax.grid(True, alpha=0.3)
     ax.set_ylim(0, 108)
@@ -252,7 +275,10 @@ def plot_accuracy_by_length_with_ci(
 
     ax.set_xlabel("上下文长度 (chars)", fontsize=12)
     ax.set_ylabel("准确率 (%) — Contains Match", fontsize=12)
-    ax.set_title("跨模型 NIAH 准确率 vs 上下文长度（含 95% CI）", fontsize=14)
+    ax.set_title(
+        "跨模型 NIAH 准确率 vs 上下文长度（含 95% CI，eval_valid）",
+        fontsize=14,
+    )
     ax.legend(fontsize=11)
     ax.grid(True, alpha=0.3)
     ax.set_ylim(0, 108)
@@ -275,12 +301,13 @@ def plot_position_bias(
     score_col: str = "contains_score",
     save: bool = True,
     figures_dir: str | Path | None = None,
+    eval_valid_only: bool = True,
 ) -> plt.Figure:
     """
     将 depth_pct 分为开头/中间/结尾三段，
     对比各模型在不同位置的准确率，验证 "Lost in the Middle" 现象。
     """
-    df = df.copy()
+    df = _prepare_niah_df(df, eval_valid_only=eval_valid_only).copy()
     bins = [-1, 20, 70, 101]
     labels = ["开头\n(0-20%)", "中间\n(20-70%)", "结尾\n(70-100%)"]
     df["position"] = pd.cut(df["depth_pct"], bins=bins, labels=labels)
@@ -327,7 +354,10 @@ def plot_position_bias(
     ax.set_xticks(x)
     ax.set_xticklabels(positions, fontsize=12)
     ax.set_ylabel("准确率 (%) — Contains Match", fontsize=12)
-    ax.set_title('"Lost in the Middle" — 位置偏差分析', fontsize=14)
+    ax.set_title(
+        '"Lost in the Middle" — 位置偏差分析（eval_valid）',
+        fontsize=14,
+    )
     ax.legend(fontsize=11)
     ax.set_ylim(0, 120)
     ax.grid(True, alpha=0.3, axis="y")
@@ -338,6 +368,148 @@ def plot_position_bias(
         fig.savefig(path, dpi=150, bbox_inches="tight")
         print(f"✅ 已保存: {path}")
 
+    return fig
+
+
+# ──────────────────────────────────────────────
+# 多跳推理：按模型 × hops 的准确率
+# ──────────────────────────────────────────────
+
+def plot_multihop_by_hops(
+    df_multihop: pd.DataFrame,
+    score_col: str = "contains_score",
+    save: bool = True,
+    figures_dir: str | Path | None = None,
+):
+    """多跳推理 Contains 准确率：模型 × hops 分组柱状图。"""
+    if df_multihop.empty:
+        print("⚠️  无多跳数据，跳过 plot_multihop_by_hops")
+        return None
+
+    grouped = (
+        df_multihop.groupby(["model", "hops"])[score_col]
+        .agg(["mean", "size"])
+        .reset_index()
+    )
+    grouped["mean"] *= 100
+
+    models = sorted(grouped["model"].unique())
+    hops_values = sorted(grouped["hops"].dropna().unique())
+    x = np.arange(len(models))
+    width = 0.8 / max(len(hops_values), 1)
+    colors = ["#2a9d8f", "#e76f51", "#264653", "#e9c46a"]
+
+    fig, ax = plt.subplots(figsize=(9, 5))
+    for i, hops in enumerate(hops_values):
+        vals, ns = [], []
+        for model in models:
+            row = grouped[(grouped["model"] == model) & (grouped["hops"] == hops)]
+            vals.append(float(row["mean"].iloc[0]) if not row.empty else 0.0)
+            ns.append(int(row["size"].iloc[0]) if not row.empty else 0)
+        offset = (i - (len(hops_values) - 1) / 2) * width
+        bars = ax.bar(x + offset, vals, width, label=f"{int(hops)}-hop", color=colors[i % len(colors)])
+        for bar, n in zip(bars, ns):
+            ax.text(bar.get_x() + bar.get_width() / 2, bar.get_height() + 1.5,
+                    f"{bar.get_height():.0f}%\n(n={n})", ha="center", va="bottom", fontsize=9)
+
+    ax.set_xticks(x)
+    ax.set_xticklabels([format_model_name(m) for m in models], fontsize=9)
+    ax.set_ylabel("Contains 准确率 (%)")
+    ax.set_title("多跳推理（嵌入长文）— 模型 × hops 准确率", fontsize=14)
+    ax.set_ylim(0, 115)
+    ax.legend(title="推理跳数", fontsize=10)
+    ax.grid(True, alpha=0.3, axis="y")
+    plt.tight_layout()
+
+    if save:
+        path = _resolve_figures_dir(figures_dir) / "multihop_by_hops.png"
+        fig.savefig(path, dpi=150, bbox_inches="tight")
+        print(f"✅ 已保存: {path}")
+
+    return fig
+
+
+def plot_efficiency_tradeoff(
+    summary_df: pd.DataFrame,
+    save: bool = True,
+    figures_dir: str | Path | None = None,
+) -> plt.Figure:
+    """准确率-成本-输出 token 三维效率图（基于 eval_valid 汇总）。"""
+    plot_df = summary_df.sort_values("contains_pct", ascending=True).copy()
+    plot_df["model"] = plot_df["model"].map(format_model_name)
+
+    fig, axes = plt.subplots(1, 2, figsize=(14, 5))
+    colors = ["#2a9d8f", "#e9c46a", "#e76f51", "#264653"]
+
+    axes[0].barh(
+        plot_df["model"],
+        plot_df["cost_per_contains_hit_cny"],
+        color=colors[: len(plot_df)],
+    )
+    axes[0].set_title("单位命中成本 (CNY / contains hit, eval_valid)")
+    axes[0].set_xlabel("CNY")
+    axes[0].grid(True, axis="x", alpha=0.25)
+
+    axes[1].scatter(
+        plot_df["avg_completion_tokens"],
+        plot_df["contains_pct"],
+        s=plot_df["avg_response_chars"].clip(lower=1) * 8,
+        c=range(len(plot_df)),
+        cmap="viridis",
+        alpha=0.85,
+    )
+    for _, row in plot_df.iterrows():
+        axes[1].text(
+            row["avg_completion_tokens"] + 0.2,
+            row["contains_pct"] + 0.2,
+            row["model"],
+            fontsize=9,
+        )
+    axes[1].set_title("准确率 vs 输出 token (eval_valid)")
+    axes[1].set_xlabel("平均 completion tokens")
+    axes[1].set_ylabel("Contains 准确率 (%)")
+    axes[1].grid(True, alpha=0.25)
+    plt.tight_layout()
+
+    if save:
+        path = _resolve_figures_dir(figures_dir) / "efficiency_tradeoff.png"
+        fig.savefig(path, dpi=150, bbox_inches="tight")
+        print(f"✅ 已保存: {path}")
+    return fig
+
+
+def plot_depth_accuracy_curve(
+    df: pd.DataFrame,
+    save: bool = True,
+    figures_dir: str | Path | None = None,
+    eval_valid_only: bool = True,
+) -> plt.Figure:
+    """各模型 Contains 随 needle 深度变化曲线。"""
+    plot_df = _prepare_niah_df(df, eval_valid_only=eval_valid_only)
+    fig, ax = plt.subplots(figsize=(10, 5))
+    for model, sub in plot_df.groupby("model"):
+        depth_acc = sub.groupby("depth_pct")["contains_score"].mean().sort_index() * 100
+        ax.plot(
+            depth_acc.index,
+            depth_acc.values,
+            marker="o",
+            linewidth=2,
+            label=format_model_name(model),
+        )
+
+    ax.axvspan(20, 70, alpha=0.08, color="red")
+    ax.set_xlabel("Needle 插入深度 (%)")
+    ax.set_ylabel("Contains 准确率 (%)")
+    ax.set_title("V2 准确率 vs Needle 深度（eval_valid）")
+    ax.grid(True, alpha=0.3)
+    ax.legend()
+    ax.set_ylim(0, 108)
+    plt.tight_layout()
+
+    if save:
+        path = _resolve_figures_dir(figures_dir) / "depth_accuracy_curve.png"
+        fig.savefig(path, dpi=150, bbox_inches="tight")
+        print(f"✅ 已保存: {path}")
     return fig
 
 

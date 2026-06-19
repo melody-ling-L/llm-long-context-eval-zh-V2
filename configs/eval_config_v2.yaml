@@ -22,6 +22,13 @@ models:
     max_tokens: 256
     rpm_limit: 20
 
+  kimi26:
+    api_base: "https://re.94xy.cn/v1"
+    model_name: "kimi2.6-320K"
+    api_key_env: "ANTHROPIC_AUTH_TOKEN"
+    max_tokens: 256
+    rpm_limit: 30
+
   qwen:
     api_base: "https://dashscope.aliyuncs.com/compatible-mode/v1"
     model_name: "qwen-long"
@@ -44,6 +51,15 @@ eval:
   multi_hop:
     qa_path: "data/needles/multihop_qa_v2.json"
     num_samples: null
+    context_length: 8000   # 把多跳事实分散嵌入这么长的 haystack（字符）
+    seed: 2026
+    # 只用中性科普文档当 haystack，避开会触发各平台内容审核的政策/历史/宗教类文本
+    haystack_files:
+      - "数学.txt"
+      - "物理学.txt"
+      - "生物学.txt"
+      - "量子力学.txt"
+      - "人工智能.txt"
 
 # ==============================
 # 路径配置

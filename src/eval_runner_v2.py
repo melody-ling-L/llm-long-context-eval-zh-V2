@@ -4,6 +4,7 @@
 - 保留 sample_id / variant / domain / num_needles 等元数据
 - 使用 sample_id 作为断点续跑主键，避免重复问题
 - 原始结果写入 results/v2/raw/，不覆盖 V1
+- 每条结果写入 error 列，记录 API 失败原因（空字符串表示成功）
 """
 
 from __future__ import annotations
@@ -19,7 +20,7 @@ import yaml
 from dotenv import load_dotenv
 from tqdm import tqdm
 
-from src.eval_runner import _API_KEY_ENV, call_model, get_client
+from src.metrics_v2 import is_content_filter_failure, is_infra_api_failure
 
 load_dotenv()
 
@@ -31,6 +32,7 @@ PASS_THROUGH_FIELDS = [
     "domain",
     "difficulty",
     "answer_type",
+    "scoring_mode",
     "num_needles",
     "distractor_count",
     "target_needle_id",
@@ -50,17 +52,66 @@ def _resume_key(model_key: str, sample: dict) -> tuple:
     )
 
 
+def _row_failed(row: pd.Series) -> bool:
+    if is_content_filter_failure(row):
+        return False
+    error = row.get("error")
+    if pd.notna(error) and str(error).strip():
+        return True
+    return (
+        float(row.get("prompt_tokens", 0) or 0) == 0
+        and float(row.get("latency_s", 0) or 0) == 0
+        and not str(row.get("model_response", "") or "").strip()
+    )
+
+
+def _row_skip_resume(row: pd.Series) -> bool:
+    """成功或 content_filter 均不再续跑。"""
+    if is_content_filter_failure(row):
+        return True
+    return not _row_failed(row)
+
+
 def _existing_resume_counts(existing_df: pd.DataFrame) -> Counter:
-    if "sample_id" in existing_df.columns:
-        return Counter(zip(existing_df["model"], existing_df["sample_id"]))
+    skip_df = existing_df[existing_df.apply(_row_skip_resume, axis=1)]
+    if "sample_id" in skip_df.columns:
+        return Counter(zip(skip_df["model"], skip_df["sample_id"]))
     return Counter(
         zip(
-            existing_df["model"],
-            existing_df["question"],
-            existing_df["context_length"].astype(str),
-            existing_df["depth_pct"].astype(str),
-            existing_df.get("variant", pd.Series(["niah"] * len(existing_df))).astype(str),
+            skip_df["model"],
+            skip_df["question"],
+            skip_df["context_length"].astype(str),
+            skip_df["depth_pct"].astype(str),
+            skip_df.get("variant", pd.Series(["niah"] * len(skip_df))).astype(str),
         )
+    )
+
+
+def _flush_row(out_path: Path, row: dict, model_key: str, sample: dict) -> None:
+    """逐条落盘；若同 key 存在失败行则覆盖，避免断点续跑重复计费。"""
+    new_df = pd.DataFrame([row])
+    if not out_path.exists():
+        new_df.to_csv(out_path, index=False, encoding="utf-8-sig")
+        return
+
+    old_df = pd.read_csv(out_path)
+    if "sample_id" in old_df.columns and sample.get("sample_id"):
+        dup_mask = (old_df["model"] == model_key) & (old_df["sample_id"] == sample["sample_id"])
+    else:
+        variant = sample.get("variant", "niah")
+        dup_mask = (
+            (old_df["model"] == model_key)
+            & (old_df["question"] == sample["question"])
+            & (old_df["context_length"].astype(str) == str(sample.get("context_length")))
+            & (old_df["depth_pct"].astype(str) == str(sample.get("depth_pct")))
+            & (old_df.get("variant", pd.Series(["niah"] * len(old_df))).astype(str) == str(variant))
+        )
+    failed_dup = dup_mask & old_df.apply(
+        lambda row: _row_failed(row) and not is_content_filter_failure(row), axis=1
+    )
+    old_df = old_df[~failed_dup]
+    pd.concat([old_df, new_df], ignore_index=True).to_csv(
+        out_path, index=False, encoding="utf-8-sig"
     )
 
 
@@ -92,7 +143,7 @@ def run_eval_v2(
 
     rows = []
     for model_key in model_keys:
-        if not os.getenv(_API_KEY_ENV.get(model_key, ""), ""):
+        if not get_api_key(model_key, config["models"][model_key]):
             print(f"⚠️  {model_key} 未配置 API Key，跳过")
             continue
 
@@ -107,7 +158,7 @@ def run_eval_v2(
                 existing_counts[key] -= 1
                 continue
 
-            response, prompt_tokens, completion_tokens, cached_tokens, latency = call_model(
+            response, prompt_tokens, completion_tokens, cached_tokens, latency, error = call_model(
                 client,
                 model_name,
                 sample["context"],
@@ -128,6 +179,7 @@ def run_eval_v2(
                 "cached_tokens": cached_tokens,
                 "tokens_used": prompt_tokens + completion_tokens,
                 "latency_s": round(latency, 2),
+                "error": error,
                 "response_chars": len(response),
                 "question_chars": len(sample["question"]),
                 "context_chars": len(sample["context"]),
@@ -137,22 +189,18 @@ def run_eval_v2(
                     row[field] = sample[field]
             if "inserted_needles" in sample and sample["inserted_needles"] is not None:
                 row["inserted_needles"] = json.dumps(sample["inserted_needles"], ensure_ascii=False)
+            if sample.get("answer_aliases"):
+                row["answer_aliases"] = json.dumps(sample["answer_aliases"], ensure_ascii=False)
             rows.append(row)
+            _flush_row(out_path, row, model_key, sample)
             time.sleep(request_interval)
 
     if not rows:
         print("ℹ️  无新结果（所有样本已处理或无可用 API Key）")
         return pd.read_csv(out_path) if out_path.exists() else pd.DataFrame()
 
-    new_df = pd.DataFrame(rows)
-    if resume and out_path.exists():
-        old_df = pd.read_csv(out_path)
-        final_df = pd.concat([old_df, new_df], ignore_index=True)
-    else:
-        final_df = new_df
-
-    final_df.to_csv(out_path, index=False, encoding="utf-8-sig")
-    print(f"\n✅ V2 结果保存至: {out_path}（共 {len(final_df)} 条）")
+    final_df = pd.read_csv(out_path)
+    print(f"\n✅ V2 结果保存至: {out_path}（共 {len(final_df)} 条，本次新增 {len(rows)} 条）")
     return final_df
 
 

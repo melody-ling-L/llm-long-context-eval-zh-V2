@@ -4,7 +4,7 @@
 功能：
 - 统一调用 DeepSeek / Kimi / Qwen-Long API
 - 限速控制（避免触发 RPM 限制）
-- 结果存储为 results/raw/raw_results.csv
+- 结果存储为 results/raw/raw_results.csv（含 error 列记录 API 失败原因）
 
 用法：
     python src/eval_runner.py
@@ -52,18 +52,39 @@ USER_PROMPT_TEMPLATE = """\
 _API_KEY_ENV = {
     "deepseek": "DEEPSEEK_API_KEY",
     "kimi": "MOONSHOT_API_KEY",
+    "kimi26": "ANTHROPIC_AUTH_TOKEN",
     "qwen": "DASHSCOPE_API_KEY",
 }
+
+# moonshot-v1-128k 走 api.moonshot.cn，需 MOONSHOT_API_KEY；KIMI_API_KEY 仅用于 Kimi Coding。
+_API_KEY_FALLBACK = {
+    "kimi": ["MOONSHOT_API_KEY", "KIMI_API_KEY"],
+    "kimi26": ["ANTHROPIC_AUTH_TOKEN", "KIMI_API_KEY"],
+}
+
+
+def _api_key_env_vars(model_key: str, model_cfg: dict | None = None) -> list[str]:
+    if model_cfg and model_cfg.get("api_key_env"):
+        return [model_cfg["api_key_env"]]
+    return _API_KEY_FALLBACK.get(model_key, [_API_KEY_ENV[model_key]])
+
+
+def get_api_key(model_key: str, model_cfg: dict | None = None) -> str:
+    """按优先级读取 API Key；支持 config 中的 api_key_env 覆盖。"""
+    for env_var in _api_key_env_vars(model_key, model_cfg):
+        api_key = os.getenv(env_var, "")
+        if api_key:
+            return api_key
+    return ""
 
 
 def get_client(model_key: str, config: dict) -> tuple:
     """返回 (OpenAI client, model_name)"""
     model_cfg = config["models"][model_key]
-    api_key = os.getenv(_API_KEY_ENV[model_key], "")
+    api_key = get_api_key(model_key, model_cfg)
     if not api_key:
-        raise ValueError(
-            f"未找到 {_API_KEY_ENV[model_key]}，请在 .env 文件中配置。"
-        )
+        env_hint = " / ".join(_api_key_env_vars(model_key, model_cfg))
+        raise ValueError(f"未找到 {env_hint}，请在 .env 文件中配置。")
     client = OpenAI(api_key=api_key, base_url=model_cfg["api_base"])
     return client, model_cfg["model_name"]
 
@@ -82,10 +103,12 @@ def call_model(
     retry_wait: float = 5.0,
 ) -> tuple:
     """
-    调用模型并返回 (response_text, total_tokens, latency_s)。
-    失败时最多重试 retries 次。
+    调用模型并返回 (response_text, prompt_tokens, completion_tokens,
+    cached_tokens, latency_s, error)。
+    失败时最多重试 retries 次；error 为空字符串表示成功。
     """
     prompt = USER_PROMPT_TEMPLATE.format(context=context, question=question)
+    last_error = ""
 
     for attempt in range(retries):
         try:
@@ -105,14 +128,15 @@ def call_model(
             prompt_tokens = usage.prompt_tokens if usage else 0
             completion_tokens = usage.completion_tokens if usage else 0
             cached_tokens = getattr(usage, "prompt_cache_hit_tokens", 0) or 0
-            return text, prompt_tokens, completion_tokens, cached_tokens, elapsed
+            return text, prompt_tokens, completion_tokens, cached_tokens, elapsed, ""
 
         except Exception as e:
+            last_error = str(e)
             print(f"  ⚠️  API 调用失败（尝试 {attempt + 1}/{retries}）: {e}")
             if attempt < retries - 1:
                 time.sleep(retry_wait)
 
-    return "", 0, 0, 0, 0.0
+    return "", 0, 0, 0, 0.0, last_error
 
 
 # ──────────────────────────────────────────────
@@ -165,7 +189,7 @@ def run_eval(
     all_results = []
 
     for model_key in model_keys:
-        if not os.getenv(_API_KEY_ENV.get(model_key, ""), ""):
+        if not get_api_key(model_key, config["models"][model_key]):
             print(f"⚠️  {model_key} 未配置 API Key，跳过")
             continue
 
@@ -186,7 +210,7 @@ def run_eval(
                 existing_counts[key] -= 1
                 continue  # 跳过已计算的
 
-            response, prompt_tokens, completion_tokens, cached_tokens, latency = call_model(
+            response, prompt_tokens, completion_tokens, cached_tokens, latency, error = call_model(
                 client,
                 model_name,
                 sample["context"],
@@ -208,6 +232,7 @@ def run_eval(
                     "cached_tokens": cached_tokens,
                     "tokens_used": prompt_tokens + completion_tokens,
                     "latency_s": round(latency, 2),
+                    "error": error,
                 }
             )
 

@@ -82,6 +82,7 @@ _PRICE_TABLE = {
     # (prompt, completion, cached)
     "deepseek": (1.0,   2.0,  0.1),
     "kimi":     (60.0, 60.0, 60.0),   # moonshot-v1-128k 实际价格
+    "kimi26":   (5.0,  5.0,  5.0),    # kimi2.6-320K 代理，单价待核对
     "qwen":     (4.0,   4.0,  4.0),   # qwen-long
 }
 

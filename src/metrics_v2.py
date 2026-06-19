@@ -8,12 +8,71 @@
 
 from __future__ import annotations
 
+import json
 import re
 from math import sqrt
 
 import pandas as pd
 
 from src.metrics import _PRICE_TABLE, contains_match, exact_match, normalize_answer
+
+# 答案尾部的方位/时态词视为可选，缓解 "23:30前" vs "23:30" 这类误判。
+# 注意：只处理尾部方位/时态词，不裸剥数字单位（如 天/人），以免 "20" 误命中 "2025"。
+_OPTIONAL_TAIL = ("以内", "之内", "以前", "以后", "前", "后", "内")
+
+
+def _parse_aliases(value) -> list[str]:
+    if value is None or (isinstance(value, float) and pd.isna(value)):
+        return []
+    if isinstance(value, list):
+        return [str(v) for v in value]
+    text = str(value).strip()
+    if not text or text.lower() in {"nan", "none"}:
+        return []
+    try:
+        parsed = json.loads(text)
+        if isinstance(parsed, list):
+            return [str(v) for v in parsed]
+    except (ValueError, TypeError):
+        pass
+    return [text]
+
+
+def _answer_candidates(expected: str, aliases: list[str]) -> list[str]:
+    base = [expected, *aliases]
+    extra = []
+    for cand in base:
+        for tail in _OPTIONAL_TAIL:
+            if cand.endswith(tail) and len(cand) > len(tail):
+                extra.append(cand[: -len(tail)])
+                break
+    return base + extra
+
+
+_NUMERIC_RE = re.compile(r"^\d+(?:\.\d+)?$")
+
+
+def _candidate_in_prediction(npred: str, candidate: str) -> bool:
+    ncand = normalize_answer(candidate)
+    if not ncand:
+        return False
+    # 纯数字候选用边界匹配，避免 "20" 误命中 "2025" 这类子串假阳性
+    if _NUMERIC_RE.match(ncand):
+        pattern = r"(?<![\d.])" + re.escape(ncand) + r"(?![\d.])"
+        return re.search(pattern, npred) is not None
+    return ncand in npred
+
+
+def contains_match_v2(prediction: str, expected: str, aliases: list[str] | None = None) -> int:
+    npred = normalize_answer(str(prediction))
+    candidates = _answer_candidates(expected, aliases or [])
+    return int(any(_candidate_in_prediction(npred, cand) for cand in candidates))
+
+
+def exact_match_v2(prediction: str, expected: str, aliases: list[str] | None = None) -> int:
+    npred = normalize_answer(str(prediction))
+    candidates = _answer_candidates(expected, aliases or [])
+    return int(any(npred == normalize_answer(cand) for cand in candidates))
 
 
 _NUMBER_LIKE_PATTERN = re.compile(
@@ -36,14 +95,87 @@ def _has_number_like_signal(value) -> bool:
     return bool(_NUMBER_LIKE_PATTERN.search(_safe_text(value)))
 
 
+def is_api_failure(row: pd.Series) -> bool:
+    """API 层失败：有 error 字段，或 prompt_tokens/latency 均为 0 且响应为空。"""
+    if is_content_filter_failure(row):
+        return True
+    if "error" in row.index and _safe_text(row.get("error")):
+        return True
+    return (
+        float(row.get("prompt_tokens", 0) or 0) == 0
+        and float(row.get("latency_s", 0) or 0) == 0
+        and _looks_empty_answer(row.get("model_response"))
+    )
+
+
+def is_content_filter_failure(row: pd.Series) -> bool:
+    """Moonshot 等内容审核拦截；非模型答错，重试同 prompt 无效。"""
+    err = _safe_text(row.get("error")).lower()
+    return "content_filter" in err or "high risk" in err
+
+
+def is_infra_api_failure(row: pd.Series) -> bool:
+    """余额/限流/网络等基础设施失败，续跑可能恢复。"""
+    return is_api_failure(row) and not is_content_filter_failure(row)
+
+
+def is_eval_valid(row: pd.Series) -> bool:
+    """纳入模型能力统计的有效样本（API 真正执行且返回）。"""
+    return not is_api_failure(row)
+
+
+def attach_call_status(df: pd.DataFrame) -> pd.DataFrame:
+    annotated = df.copy()
+    annotated["content_filter"] = annotated.apply(is_content_filter_failure, axis=1).astype(int)
+    annotated["infra_api_failed"] = annotated.apply(is_infra_api_failure, axis=1).astype(int)
+    annotated["eval_valid"] = annotated.apply(is_eval_valid, axis=1).astype(int)
+    if "api_failed" not in annotated.columns:
+        annotated["api_failed"] = annotated.apply(is_api_failure, axis=1).astype(int)
+    return annotated
+
+
+def summarize_call_status(df: pd.DataFrame, group_cols: list[str] | None = None) -> pd.DataFrame:
+    """统计 eval_valid / content_filter / infra_api_failed 分布。"""
+    if group_cols is None:
+        group_cols = ["model"]
+    annotated = attach_call_status(df)
+    return (
+        annotated.groupby(group_cols, dropna=False)
+        .agg(
+            n=("eval_valid", "size"),
+            eval_valid=("eval_valid", "sum"),
+            content_filter=("content_filter", "sum"),
+            infra_api_failed=("infra_api_failed", "sum"),
+        )
+        .reset_index()
+        .assign(
+            eval_valid_pct=lambda d: (d["eval_valid"] / d["n"] * 100).round(1),
+            content_filter_pct=lambda d: (d["content_filter"] / d["n"] * 100).round(1),
+        )
+    )
+
+
+def filter_eval_valid(df: pd.DataFrame) -> pd.DataFrame:
+    return attach_call_status(df)[lambda d: d["eval_valid"] == 1].copy()
+
+
 def score_results_v2(df: pd.DataFrame) -> pd.DataFrame:
     scored = df.copy()
+    aliases_col = scored["answer_aliases"] if "answer_aliases" in scored.columns else None
     scored["em_score"] = scored.apply(
-        lambda row: exact_match(str(row["model_response"]), str(row["expected_answer"])),
+        lambda row: exact_match_v2(
+            str(row["model_response"]),
+            str(row["expected_answer"]),
+            _parse_aliases(row["answer_aliases"]) if aliases_col is not None else [],
+        ),
         axis=1,
     )
     scored["contains_score"] = scored.apply(
-        lambda row: contains_match(str(row["model_response"]), str(row["expected_answer"])),
+        lambda row: contains_match_v2(
+            str(row["model_response"]),
+            str(row["expected_answer"]),
+            _parse_aliases(row["answer_aliases"]) if aliases_col is not None else [],
+        ),
         axis=1,
     )
 
@@ -61,6 +193,8 @@ def score_results_v2(df: pd.DataFrame) -> pd.DataFrame:
         lambda row: row["contains_score"] / max(row["row_cost_cny"], 1e-9),
         axis=1,
     )
+    scored["api_failed"] = scored.apply(is_api_failure, axis=1).astype(int)
+    scored = attach_call_status(scored)
     return scored
 
 
@@ -126,6 +260,11 @@ def summarize_variant_matrix(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def classify_badcase_taxonomy(row: pd.Series) -> str:
+    if int(row.get("content_filter", 0) or 0) == 1 or is_content_filter_failure(row):
+        return "平台内容审核拦截（不计入模型能力）"
+    if int(row.get("infra_api_failed", 0) or 0) == 1 or is_infra_api_failure(row):
+        return "基础设施调用失败（不计入模型能力）"
+
     response = _safe_text(row.get("model_response", ""))
     expected = _safe_text(row.get("expected_answer", ""))
     task = str(row.get("task", "niah") or "niah")
@@ -164,14 +303,17 @@ def classify_badcase_taxonomy(row: pd.Series) -> str:
 
 
 def attach_badcase_taxonomy(df: pd.DataFrame) -> pd.DataFrame:
-    annotated = df.copy()
+    annotated = attach_call_status(df)
     if annotated.empty:
         annotated["badcase_taxonomy"] = pd.Series(dtype="object")
         annotated["is_badcase"] = pd.Series(dtype="int")
         return annotated
 
     annotated["badcase_taxonomy"] = annotated.apply(classify_badcase_taxonomy, axis=1)
-    annotated["is_badcase"] = ((annotated["contains_score"] == 0) | (annotated["em_score"] == 0)).astype(int)
+    annotated["is_badcase"] = (
+        ((annotated["contains_score"] == 0) | (annotated["em_score"] == 0))
+        & (annotated["eval_valid"] == 1)
+    ).astype(int)
     return annotated
 
 
@@ -203,10 +345,12 @@ def summarize_badcase_taxonomy(
     return summary.sort_values(["n", *group_cols], ascending=[False, *([True] * len(group_cols))])
 
 
-def print_v2_summary(df: pd.DataFrame):
-    summary = summarize_v2(df)
+def print_v2_summary(df: pd.DataFrame, valid_only: bool = False):
+    view = filter_eval_valid(df) if valid_only else df
+    label = "（仅 eval_valid 有效样本）" if valid_only else ""
+    summary = summarize_v2(view)
     print("\n" + "=" * 72)
-    print("                      V2 评测结果摘要")
+    print(f"                      V2 评测结果摘要{label}")
     print("=" * 72)
     cols = [
         "model",
@@ -221,7 +365,20 @@ def print_v2_summary(df: pd.DataFrame):
         "cost_per_contains_hit_cny",
     ]
     print(summary[cols].to_string(index=False))
-    if "variant" in df.columns:
+    if "variant" in view.columns:
         print("\n按变体拆分：")
-        print(summarize_variant_matrix(df)[["model", "variant", "n", "contains_pct", "contains_ci_low_pct", "contains_ci_high_pct"]].to_string(index=False))
+        print(summarize_variant_matrix(view)[["model", "variant", "n", "contains_pct", "contains_ci_low_pct", "contains_ci_high_pct"]].to_string(index=False))
     print("=" * 72 + "\n")
+
+
+def print_v2_summary_with_status(df: pd.DataFrame):
+    """打印调用状态 + 全量/有效样本双口径摘要。"""
+    if "task" in df.columns:
+        niah = df[df["task"].fillna("niah") == "niah"]
+    else:
+        niah = df
+    print("\n调用状态（NIAH）：")
+    print(summarize_call_status(niah).to_string(index=False))
+    print_v2_summary(niah, valid_only=False)
+    if (attach_call_status(niah)["eval_valid"] == 0).any():
+        print_v2_summary(niah, valid_only=True)

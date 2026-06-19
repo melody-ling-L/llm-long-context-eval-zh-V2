@@ -64,11 +64,11 @@
 
 **待测模型**：
 
-| 模型 | API | 上下文窗口 | 定价（大约） |
-|---|---|---|---|
-| DeepSeek-V3 | deepseek-chat | 64K | ¥1/M tokens |
-| Kimi (Moonshot) | moonshot-v1-128k | 128K | ¥12/M tokens |
-| Qwen-Long | qwen-long | 1M | ¥4/M tokens |
+| 模型（展示名 + 实际 API 名） | 上下文窗口 | 定价（大约） |
+|---|---|---|
+| DeepSeek-V3 (`deepseek-chat`) | 64K | ¥1/M tokens |
+| Kimi (Moonshot) (`moonshot-v1-128k`) | 128K | ¥12/M tokens |
+| Qwen-Long (`qwen-long`) | 1M | ¥4/M tokens |
 
 **分析维度**：在相同测试条件下，哪个模型的"有效上下文窗口"最大？
 
