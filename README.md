@@ -3,14 +3,14 @@
 [![Lint](https://github.com/melody-ling-L/llm-long-context-eval-zh-V2/actions/workflows/lint.yml/badge.svg)](https://github.com/melody-ling-L/llm-long-context-eval-zh-V2/actions/workflows/lint.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![V2 Samples](https://img.shields.io/badge/NIAH-1050-blue)](#v2-results)
-[![multi_hop](https://img.shields.io/badge/multi__hop-64-orange)](#multi-hop-pilot)
+[![multi_hop](https://img.shields.io/badge/multi__hop-96-orange)](#multi-hop-pilot)
 [![Pilot Models](https://img.shields.io/badge/models-3-green)](#v2-results)
 [![Repeats](https://img.shields.io/badge/repeats-10-purple)](#methodology)
 [![Status](https://img.shields.io/badge/status-final_v2-success)](#v2-results)
 
 > 面向中文长上下文场景的 **V2 基准仓库**。这一版把单格重复数从 3 提高到 10，并引入 `style_aligned`、`numeric_confusable`、`multi_key` 三类更难的中文 NIAH 变体。
 >
-> 当前仓库包含 **完整 V2 结果层**：3 个模型、5 个上下文长度、7 个深度点、10 次重复，共 **1050 条 NIAH 原始调用 + 64 条 multi_hop 结果**，附带 `results/v2/` 下的汇总表、taxonomy CSV 与报告图表。
+> 当前仓库包含 **完整 V2 结果层**：3 个模型、5 个上下文长度、7 个深度点、10 次重复，共 **1050 条 NIAH 原始调用 + 96 条 multi_hop 结果（32 条/模型）**，附带 `results/v2/` 下的汇总表、taxonomy CSV 与报告图表。
 >
 > **主口径说明（Scheme A）**：报告中的模型能力指标默认基于 `eval_valid` 有效样本，排除 `content_filter`（平台内容审核拦截）与 `infra_api_failed`（余额耗尽、限流等基础设施失败）。这些失败不应计入模型检索能力。
 
@@ -101,9 +101,9 @@ V1 基线仓库见：[llm-long-context-eval-zh](https://github.com/melody-ling-L
 |------|:--:|:--:|:--------:|:------:|------|
 | DeepSeek | 32 | 43.8% | 65.6% | 48.3% - 79.6% | 2-hop 74.1%，3-hop 20.0%；命中成本最低。 |
 | Qwen | 32 | 68.8% | 68.8% | 51.4% - 82.0% | 2-hop 74.1%，3-hop 40.0%；EM 更稳但成本更高。 |
-| Kimi | — | — | — | — | 当前 multi_hop 尚未跑 Kimi。 |
+| Kimi | 32 | 50.0% | 56.2% | 39.3% - 71.8% | 2-hop 66.7%，**3-hop 0.0%**；长距离多步综合明显偏弱。 |
 
-当前 multi_hop 不是「已生成待处理」的数据，而是已经正式并入统一报告的第一版真实任务切片。按跳数拆分见：`results/v2/processed/summary_multihop_by_hops.csv`
+当前 multi_hop 已覆盖 **3 个模型各 32 条**（事实分散嵌入 ~8000 字符长文）。按跳数拆分见：`results/v2/processed/summary_multihop_by_hops.csv`
 
 ### Actionable Assets
 
@@ -250,7 +250,7 @@ V2 关键产物路径：
 
 ## Current Limits
 
-- `multi_hop` 已正式进入统一报告，但当前只有 64 条结果（DeepSeek / Qwen 各 32 条），更适合作为 real-task pilot，而不是最终泛化排序依据；Kimi multi_hop 尚未跑。
+- `multi_hop` 已覆盖 3 个模型各 32 条（96 条合计）。3-hop 仍是共同短板：Kimi 3-hop Contains 为 **0.0%**，DeepSeek 仅 20.0%，Qwen 相对最好（40.0%）。
 - Kimi 有 31 条 `content_filter` 样本无法通过重试恢复，需要在数据层替换敏感 haystack 或接受「平台审核盲区」作为独立统计维度。
 - DeepSeek / Qwen 各有约 31 条基础设施失败样本，长上下文评测应始终保留 `error` + `prompt_tokens` 字段以便事后诊断。
 - badcase taxonomy 已经能指导下一轮数据策略，但规则仍是启发式首版，后续值得补更细的抽错值 / 单位混淆 / 时间推理子类。

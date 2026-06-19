@@ -1,34 +1,459 @@
 [
   {
+    "id": "mh_finance_01",
     "domain": "finance",
     "difficulty": "medium",
     "hops": 2,
-    "context": "公司披露 2025 年第一季度收入为 126 亿元。董事会会议纪要又提到，研发费用率计划提升至收入的 7.5%。",
+    "scoring_mode": "auto",
+    "hop_facts": [
+      "公司披露 2025 年第一季度收入为 126 亿元。",
+      "董事会会议纪要提到，研发费用率计划提升至收入的 7.5%。"
+    ],
     "question": "按照计划，2025 年第一季度对应的研发费用预算约是多少？",
-    "answer": "9.45亿元"
+    "answer": "9.45亿元",
+    "answer_aliases": ["9.45亿", "9.45 亿元"]
   },
   {
+    "id": "mh_finance_02",
+    "domain": "finance",
+    "difficulty": "hard",
+    "hops": 2,
+    "scoring_mode": "auto",
+    "hop_facts": [
+      "2024 年全年净利润为 32 亿元。",
+      "财报附注说明，2025 年净利润目标为在上年基础上增长 25%。"
+    ],
+    "question": "公司 2025 年的净利润目标金额约为多少？",
+    "answer": "40亿元",
+    "answer_aliases": ["40亿", "40.0亿元"]
+  },
+  {
+    "id": "mh_finance_03",
+    "domain": "finance",
+    "difficulty": "hard",
+    "hops": 3,
+    "scoring_mode": "auto",
+    "hop_facts": [
+      "公司本年营业收入为 200 亿元。",
+      "年报披露综合毛利率为 40%。",
+      "管理层说明，销售费用约占毛利的 15%。"
+    ],
+    "question": "按上述口径，本年销售费用约为多少？",
+    "answer": "12亿元",
+    "answer_aliases": ["12亿"]
+  },
+  {
+    "id": "mh_finance_04",
+    "domain": "finance",
+    "difficulty": "medium",
+    "hops": 2,
+    "scoring_mode": "auto",
+    "hop_facts": [
+      "公司每股收益（EPS）为 2.5 元。",
+      "招股书显示总股本为 8 亿股。"
+    ],
+    "question": "公司净利润总额约为多少？",
+    "answer": "20亿元",
+    "answer_aliases": ["20亿"]
+  },
+  {
+    "id": "mh_finance_05",
+    "domain": "finance",
+    "difficulty": "medium",
+    "hops": 2,
+    "scoring_mode": "auto",
+    "hop_facts": [
+      "监管要求，季报需在季度结束后 45 天内披露。",
+      "公司第一季度的截止日为 3 月 31 日。"
+    ],
+    "question": "公司第一季度季报最晚应在哪天前披露？",
+    "answer": "5月15日",
+    "answer_aliases": ["5月15日前", "5 月 15 日", "05-15"]
+  },
+  {
+    "id": "mh_finance_06",
+    "domain": "finance",
+    "difficulty": "hard",
+    "hops": 2,
+    "scoring_mode": "judge",
+    "hop_facts": [
+      "三季报显示公司海外订单同比下降 30%。",
+      "管理层在业绩说明会上解释，海外市场需求疲软是主要拖累因素。"
+    ],
+    "question": "公司下调全年营收指引的主要原因是什么？",
+    "answer": "海外市场需求疲软导致订单下滑",
+    "answer_aliases": ["海外需求疲软", "海外订单下降"]
+  },
+  {
+    "id": "mh_finance_07",
+    "domain": "finance",
+    "difficulty": "medium",
+    "hops": 2,
+    "scoring_mode": "auto",
+    "hop_facts": [
+      "资产负债表显示现金及现金等价物为 50 亿元。",
+      "附注列示短期借款为 30 亿元。"
+    ],
+    "question": "公司的净现金（现金及等价物减去短期借款）为多少？",
+    "answer": "20亿元",
+    "answer_aliases": ["20亿"]
+  },
+
+  {
+    "id": "mh_manufacturing_01",
     "domain": "manufacturing",
     "difficulty": "medium",
     "hops": 2,
-    "context": "A5 产线每小时标准产能为 180 件。生产运营日报显示，本周该产线平均开机 14 小时/天。",
+    "scoring_mode": "auto",
+    "hop_facts": [
+      "A5 产线每小时标准产能为 180 件。",
+      "生产运营日报显示，本周该产线平均每天开机 14 小时。"
+    ],
     "question": "按标准产能估算，A5 产线一天可生产多少件？",
-    "answer": "2520件"
+    "answer": "2520件",
+    "answer_aliases": ["2520"]
   },
   {
+    "id": "mh_manufacturing_02",
+    "domain": "manufacturing",
+    "difficulty": "medium",
+    "hops": 2,
+    "scoring_mode": "auto",
+    "hop_facts": [
+      "B 车间单批次投料 500 公斤。",
+      "工艺文件规定，该产品综合成品率为 92%。"
+    ],
+    "question": "一个批次预计可得到多少公斤合格成品？",
+    "answer": "460公斤",
+    "answer_aliases": ["460", "460kg"]
+  },
+  {
+    "id": "mh_manufacturing_03",
+    "domain": "manufacturing",
+    "difficulty": "hard",
+    "hops": 3,
+    "scoring_mode": "auto",
+    "hop_facts": [
+      "C 线日产 2000 件。",
+      "质检记录显示良率为 95%。",
+      "财务口径，每件合格品利润为 3 元。"
+    ],
+    "question": "按此估算，C 线一天的利润约为多少？",
+    "answer": "5700元",
+    "answer_aliases": ["5700"]
+  },
+  {
+    "id": "mh_manufacturing_04",
+    "domain": "manufacturing",
+    "difficulty": "medium",
+    "hops": 2,
+    "scoring_mode": "auto",
+    "hop_facts": [
+      "设备维护手册规定，每运行 480 小时进行一次保养。",
+      "运行台账显示该设备已累计运行 320 小时，且每天运行 8 小时。"
+    ],
+    "question": "距离下次保养还有多少天？",
+    "answer": "20天",
+    "answer_aliases": ["20"]
+  },
+  {
+    "id": "mh_manufacturing_05",
+    "domain": "manufacturing",
+    "difficulty": "hard",
+    "hops": 2,
+    "scoring_mode": "auto",
+    "hop_facts": [
+      "质量事故分级标准：影响数量超过 1000 件视为重大事故。",
+      "本次批次问题波及 1500 件产品。"
+    ],
+    "question": "本次事故应定为什么级别？",
+    "answer": "重大事故",
+    "answer_aliases": ["重大"]
+  },
+  {
+    "id": "mh_manufacturing_06",
+    "domain": "manufacturing",
+    "difficulty": "medium",
+    "hops": 2,
+    "scoring_mode": "auto",
+    "hop_facts": [
+      "工艺参数：单位产品能耗为 2 度电。",
+      "厂区电价为 0.8 元/度，本次计划生产 1000 件。"
+    ],
+    "question": "本次生产的电费约为多少？",
+    "answer": "1600元",
+    "answer_aliases": ["1600"]
+  },
+
+  {
+    "id": "mh_healthcare_01",
     "domain": "healthcare",
     "difficulty": "hard",
     "hops": 2,
-    "context": "院内质控要求明确，发热门诊核酸结果需在采样后 4 小时内回传。值班表显示，本周夜班样本统一在 19:30 完成集中采样。",
+    "scoring_mode": "auto",
+    "hop_facts": [
+      "院内质控要求，发热门诊核酸结果需在采样后 4 小时内回传。",
+      "值班表显示，本周夜班样本统一在 19:30 完成集中采样。"
+    ],
     "question": "按质控要求，夜班样本最晚应在什么时间前回传结果？",
-    "answer": "23:30前"
+    "answer": "23:30",
+    "answer_aliases": ["23:30前", "23点30分"]
   },
   {
+    "id": "mh_healthcare_02",
+    "domain": "healthcare",
+    "difficulty": "medium",
+    "hops": 2,
+    "scoring_mode": "auto",
+    "hop_facts": [
+      "药房规定，某药品单次最多发放 30 天用量。",
+      "处方显示该患者每日服用 2 片。"
+    ],
+    "question": "该患者单次最多可领取多少片？",
+    "answer": "60片",
+    "answer_aliases": ["60"]
+  },
+  {
+    "id": "mh_healthcare_03",
+    "domain": "healthcare",
+    "difficulty": "hard",
+    "hops": 3,
+    "scoring_mode": "auto",
+    "hop_facts": [
+      "某病区共有床位 50 张。",
+      "本周平均入住率为 90%。",
+      "护理规范要求护患比不低于 1:5。"
+    ],
+    "question": "按规范，本周该病区至少需配备多少名护士？",
+    "answer": "9名",
+    "answer_aliases": ["9", "9人"]
+  },
+  {
+    "id": "mh_healthcare_04",
+    "domain": "healthcare",
+    "difficulty": "medium",
+    "hops": 2,
+    "scoring_mode": "auto",
+    "hop_facts": [
+      "用药方案：该药按体重 0.5 毫克/公斤给药。",
+      "病历记录患者体重为 60 公斤。"
+    ],
+    "question": "该患者单次给药剂量为多少？",
+    "answer": "30毫克",
+    "answer_aliases": ["30mg", "30 毫克"]
+  },
+  {
+    "id": "mh_healthcare_05",
+    "domain": "healthcare",
+    "difficulty": "medium",
+    "hops": 2,
+    "scoring_mode": "auto",
+    "hop_facts": [
+      "分诊标准：收缩压高于 180 视为急危等级。",
+      "测量显示该患者收缩压为 195。"
+    ],
+    "question": "该患者应被分诊为什么等级？",
+    "answer": "急危",
+    "answer_aliases": ["急危等级"]
+  },
+  {
+    "id": "mh_healthcare_06",
+    "domain": "healthcare",
+    "difficulty": "medium",
+    "hops": 2,
+    "scoring_mode": "auto",
+    "hop_facts": [
+      "挂号系统设定每个号源间隔 15 分钟。",
+      "该门诊上午 8:00 开诊。"
+    ],
+    "question": "当天上午第 5 个号源的预约时间是几点？",
+    "answer": "9:00",
+    "answer_aliases": ["09:00", "9点", "上午9点"]
+  },
+
+  {
+    "id": "mh_retail_01",
     "domain": "retail",
     "difficulty": "hard",
     "hops": 2,
-    "context": "城市店样板计划要求新会员首月复购率达到 32%。本月新增会员人数为 4800 人。",
+    "scoring_mode": "auto",
+    "hop_facts": [
+      "城市店样板计划要求，新会员首月复购率达到 32%。",
+      "本月新增会员人数为 4800 人。"
+    ],
     "question": "按样板计划估算，本月应有多少名新会员在首月完成复购？",
-    "answer": "1536人"
+    "answer": "1536人",
+    "answer_aliases": ["1536", "1536名"]
+  },
+  {
+    "id": "mh_retail_02",
+    "domain": "retail",
+    "difficulty": "medium",
+    "hops": 2,
+    "scoring_mode": "auto",
+    "hop_facts": [
+      "门店促销规则：每满 300 元立减 50 元，可叠加。",
+      "某顾客本次购物未减前的金额为 920 元。"
+    ],
+    "question": "该顾客本次最多可享受多少元立减？",
+    "answer": "150元",
+    "answer_aliases": ["150", "立减150", "减150元"]
+  },
+  {
+    "id": "mh_retail_03",
+    "domain": "retail",
+    "difficulty": "hard",
+    "hops": 3,
+    "scoring_mode": "auto",
+    "hop_facts": [
+      "门店客单价为 80 元。",
+      "日均客流约 500 人。",
+      "商品综合毛利率为 25%。"
+    ],
+    "question": "该店单日毛利约为多少？",
+    "answer": "10000元",
+    "answer_aliases": ["1万元", "10000", "1万"]
+  },
+  {
+    "id": "mh_retail_04",
+    "domain": "retail",
+    "difficulty": "medium",
+    "hops": 2,
+    "scoring_mode": "auto",
+    "hop_facts": [
+      "积分规则：每消费 10 元累计 1 积分。",
+      "该会员本次消费 860 元。"
+    ],
+    "question": "本次可累计多少积分？",
+    "answer": "86分",
+    "answer_aliases": ["86", "86积分"]
+  },
+  {
+    "id": "mh_retail_05",
+    "domain": "retail",
+    "difficulty": "medium",
+    "hops": 2,
+    "scoring_mode": "auto",
+    "hop_facts": [
+      "库存预警规则：周转天数超过 60 天列为滞销品。",
+      "某 SKU 当前周转天数为 75 天。"
+    ],
+    "question": "该 SKU 应被归为什么类别？",
+    "answer": "滞销",
+    "answer_aliases": ["滞销品"]
+  },
+  {
+    "id": "mh_retail_06",
+    "domain": "retail",
+    "difficulty": "medium",
+    "hops": 2,
+    "scoring_mode": "auto",
+    "hop_facts": [
+      "营销计划：促销补贴预算为 GMV 的 2%。",
+      "本月预计 GMV 为 500 万元。"
+    ],
+    "question": "本月促销补贴预算约为多少？",
+    "answer": "10万元",
+    "answer_aliases": ["10万", "100000元"]
+  },
+
+  {
+    "id": "mh_creditcs_01",
+    "domain": "credit_cs",
+    "difficulty": "medium",
+    "hops": 2,
+    "scoring_mode": "auto",
+    "hop_facts": [
+      "产品说明：该信用贷年化利率为 7.2%。",
+      "客户咨询的借款金额为 10 万元，期限 1 年。"
+    ],
+    "question": "客户一年大致需支付多少利息？",
+    "answer": "7200元",
+    "answer_aliases": ["7200"]
+  },
+  {
+    "id": "mh_creditcs_02",
+    "domain": "credit_cs",
+    "difficulty": "medium",
+    "hops": 2,
+    "scoring_mode": "auto",
+    "hop_facts": [
+      "授信规则：可贷额度为客户月收入的 5 倍。",
+      "客户填写的月收入为 2 万元。"
+    ],
+    "question": "该客户预计可获得多少授信额度？",
+    "answer": "10万元",
+    "answer_aliases": ["10万", "100000元"]
+  },
+  {
+    "id": "mh_creditcs_03",
+    "domain": "credit_cs",
+    "difficulty": "hard",
+    "hops": 3,
+    "scoring_mode": "auto",
+    "hop_facts": [
+      "分期方案：月费率为 0.6%。",
+      "客户申请借款 12 万元，分 12 期偿还。",
+      "手续费按初始本金每期计收。"
+    ],
+    "question": "客户分期期间共需支付多少手续费？",
+    "answer": "8640元",
+    "answer_aliases": ["8640"]
+  },
+  {
+    "id": "mh_creditcs_04",
+    "domain": "credit_cs",
+    "difficulty": "medium",
+    "hops": 2,
+    "scoring_mode": "auto",
+    "hop_facts": [
+      "放款时效为申请后 3 个工作日。",
+      "客户在本周一提交了申请。"
+    ],
+    "question": "预计哪天放款？",
+    "answer": "周四",
+    "answer_aliases": ["星期四", "本周四"]
+  },
+  {
+    "id": "mh_creditcs_05",
+    "domain": "credit_cs",
+    "difficulty": "hard",
+    "hops": 2,
+    "scoring_mode": "auto",
+    "hop_facts": [
+      "风控规则：征信查询次数近 3 个月超过 6 次视为高风险。",
+      "客户征信报告显示近 3 个月查询 9 次。"
+    ],
+    "question": "该客户应被判定为什么风险等级？",
+    "answer": "高风险",
+    "answer_aliases": ["高风险等级"]
+  },
+  {
+    "id": "mh_creditcs_06",
+    "domain": "credit_cs",
+    "difficulty": "hard",
+    "hops": 2,
+    "scoring_mode": "judge",
+    "hop_facts": [
+      "产品规则：公积金连续缴存满 1 年方可申请信用贷 A。",
+      "客户资料显示其公积金仅缴存 5 个月。"
+    ],
+    "question": "客户当前能否申请信用贷 A？为什么？",
+    "answer": "不能，因为公积金缴存未满1年",
+    "answer_aliases": ["不能申请", "缴存未满一年"]
+  },
+  {
+    "id": "mh_creditcs_07",
+    "domain": "credit_cs",
+    "difficulty": "medium",
+    "hops": 2,
+    "scoring_mode": "auto",
+    "hop_facts": [
+      "合同约定：提前还款违约金为剩余本金的 1%。",
+      "客户当前剩余本金为 8 万元。"
+    ],
+    "question": "提前结清需支付多少违约金？",
+    "answer": "800元",
+    "answer_aliases": ["800"]
   }
 ]

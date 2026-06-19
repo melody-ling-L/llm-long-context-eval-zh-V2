@@ -20,6 +20,7 @@ import yaml
 from dotenv import load_dotenv
 from tqdm import tqdm
 
+from src.eval_runner import call_model, get_api_key, get_client
 from src.metrics_v2 import is_content_filter_failure, is_infra_api_failure
 
 load_dotenv()

@@ -164,7 +164,24 @@ def build_v2_niah_samples(
     return samples
 
 
-def build_multihop_samples_v2(qa_path: str | Path, max_samples: int | None = None) -> list[dict]:
+def _spread_multihop_depths(num_facts: int) -> list[float]:
+    """为 num_facts 个推理事实生成分散的深度，制造长距离多跳。"""
+    if num_facts <= 1:
+        return [50.0]
+    fixed = {2: [20.0, 70.0], 3: [15.0, 50.0, 85.0]}
+    if num_facts in fixed:
+        return fixed[num_facts]
+    step = (85.0 - 15.0) / (num_facts - 1)
+    return [round(15.0 + step * i, 1) for i in range(num_facts)]
+
+
+def build_multihop_samples_v2(
+    qa_path: str | Path,
+    documents: list[str],
+    context_length: int = 8000,
+    seed: int = 2026,
+    max_samples: int | None = None,
+) -> list[dict]:
     qa_file = Path(qa_path)
     if not qa_file.exists():
         print(f"⚠️  未找到 V2 多跳文件: {qa_file}")
@@ -176,28 +193,55 @@ def build_multihop_samples_v2(qa_path: str | Path, max_samples: int | None = Non
     if max_samples is not None:
         raw = raw[:max_samples]
 
+    if not documents:
+        raise ValueError("构造嵌入式多跳样本需要 data/raw/ 下的长文档作为 haystack。")
+
+    rng = random.Random(seed)
     samples = []
     for idx, item in enumerate(raw, start=1):
+        facts = item["hop_facts"]
+        depths = _spread_multihop_depths(len(facts))
+
+        reserved_chars = sum(len(f) for f in facts) + len(facts) * 2
+        required_chars = max(800, context_length - reserved_chars)
+        candidate_docs = [doc for doc in documents if len(doc) >= required_chars]
+        if not candidate_docs:
+            raise ValueError(
+                f"没有足够长的原始文档来构造 {context_length} chars 的多跳样本；"
+                f"至少需要 {required_chars} chars 的原始文档。"
+            )
+        base_doc = truncate_to_chars(rng.choice(candidate_docs), required_chars)
+
+        modified_doc = base_doc
+        inserted_meta = []
+        for depth_pct, fact in sorted(zip(depths, facts), key=lambda x: x[0]):
+            modified_doc, insert_pos = insert_needle(modified_doc, fact, depth_pct / 100.0)
+            inserted_meta.append(
+                {"text": fact, "depth_pct": depth_pct, "insert_char_pos": insert_pos}
+            )
+
         samples.append(
             {
-                "sample_id": f"v2-multihop-{idx:03d}",
+                "sample_id": f"v2-multihop-{idx:03d}-{item.get('id', 'na')}",
                 "experiment": "v2",
                 "task": "multi_hop",
                 "variant": "multi_hop",
                 "needle_style": "multi_hop",
                 "domain": item.get("domain", "general"),
                 "difficulty": item.get("difficulty", "medium"),
-                "context_length": len(item["context"]),
+                "scoring_mode": item.get("scoring_mode", "auto"),
+                "context_length": context_length,
                 "depth_pct": None,
-                "context": item["context"],
+                "context": modified_doc,
                 "question": item["question"],
                 "answer": item["answer"],
-                "num_needles": item.get("hops", 2),
+                "answer_aliases": item.get("answer_aliases", []),
+                "num_needles": len(facts),
                 "distractor_count": None,
-                "insert_char_pos": None,
-                "target_needle_id": None,
-                "inserted_needles": None,
-                "hops": item.get("hops", 2),
+                "insert_char_pos": inserted_meta[0]["insert_char_pos"],
+                "target_needle_id": item.get("id"),
+                "inserted_needles": [meta["text"] for meta in inserted_meta],
+                "hops": item.get("hops", len(facts)),
                 "answer_type": item.get("answer_type", "short_span"),
             }
         )
@@ -231,9 +275,19 @@ def main(config_path: str = "configs/eval_config_v2.yaml"):
     processed_dir = Path(config["data"]["processed_dir"])
     save_jsonl(niah_samples, processed_dir / "niah_dataset.jsonl")
 
+    multihop_cfg = config["eval"]["multi_hop"]
+    haystack_files = multihop_cfg.get("haystack_files")
+    if haystack_files:
+        raw_dir = Path(config["data"]["raw_dir"])
+        multihop_docs = [load_document(str(raw_dir / name)) for name in haystack_files]
+    else:
+        multihop_docs = documents
     multihop_samples = build_multihop_samples_v2(
-        config["eval"]["multi_hop"]["qa_path"],
-        max_samples=config["eval"]["multi_hop"].get("num_samples"),
+        multihop_cfg["qa_path"],
+        documents=multihop_docs,
+        context_length=multihop_cfg.get("context_length", 8000),
+        seed=multihop_cfg.get("seed", config["eval"]["niah"].get("seed", 2026)),
+        max_samples=multihop_cfg.get("num_samples"),
     )
     if multihop_samples:
         save_jsonl(multihop_samples, processed_dir / "multihop_dataset.jsonl")

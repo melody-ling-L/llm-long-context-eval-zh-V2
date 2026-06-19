@@ -5,7 +5,7 @@
 
 > **V2 benchmark** for Chinese long-context LLMs. This release raises per-cell repeats from 3 to 10 and adds three harder NIAH variants: `style_aligned`, `numeric_confusable`, and `multi_key`.
 >
-> The repo ships the **full V2 result layer**: 3 models, 5 context lengths, 7 depth points, 10 repeats — **1,050 NIAH API calls + 64 multi-hop rows** — with summary tables, badcase taxonomy CSVs, and report figures under `results/v2/`.
+> The repo ships the **full V2 result layer**: 3 models, 5 context lengths, 7 depth points, 10 repeats — **1,050 NIAH API calls + 96 multi-hop rows (32 per model)** — with summary tables, badcase taxonomy CSVs, and report figures under `results/v2/`.
 >
 > **Primary metric (Scheme A):** model capability stats use `eval_valid` samples only, excluding `content_filter` (platform moderation blocks) and `infra_api_failed` (billing exhaustion, rate limits, etc.). Those failures must not be counted as retrieval misses.
 
@@ -77,7 +77,7 @@ V1 baseline: [llm-long-context-eval-zh](https://github.com/melody-ling-L/llm-lon
 |-------|:--:|:--:|:--------:|-------|
 | DeepSeek | 32 | 43.8% | 65.6% | 2-hop 74.1%, 3-hop 20.0% |
 | Qwen | 32 | 68.8% | 68.8% | 2-hop 74.1%, 3-hop 40.0% |
-| Kimi | — | — | — | Not run yet |
+| Kimi | 32 | 50.0% | 56.2% | 2-hop 66.7%, **3-hop 0.0%** |
 
 ---
 
