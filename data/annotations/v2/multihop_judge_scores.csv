@@ -1,0 +1,7 @@
+model,sample_id,judge_score,judge_reason,judge_method
+deepseek,v2-multihop-006-mh_finance_06,1,回答明确指出海外市场需求疲软，与参考答案核心原因一致,manual_review
+qwen,v2-multihop-006-mh_finance_06,1,回答明确指出海外市场需求疲软，与参考答案核心原因一致,manual_review
+kimi,v2-multihop-006-mh_finance_06,1,回答明确指出海外市场需求疲软，与参考答案核心原因一致,manual_review
+deepseek,v2-multihop-031-mh_creditcs_06,1,回答给出不能申请且公积金连续缴存未满1年的完整理由,manual_review
+qwen,v2-multihop-031-mh_creditcs_06,1,回答给出不能申请且公积金未连续缴存满1年的完整理由,manual_review
+kimi,v2-multihop-031-mh_creditcs_06,1,回答给出不能申请并结合仅缴存5个月解释未满足满1年规则,manual_review

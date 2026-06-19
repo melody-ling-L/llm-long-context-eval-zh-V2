@@ -72,6 +72,13 @@ def _analyze() -> pd.DataFrame:
     call_status_by_length = summarize_call_status(df_niah, group_cols=["model", "context_length"])
     variant_summary = summarize_variant_matrix(valid_niah)
     length_summary = summarize_v2(valid_niah, group_cols=["model", "context_length"])
+    multihop = df[df["task"] == "multi_hop"].copy()
+    task_summary = summarize_v2(df, group_cols=["model", "task"])
+    multihop_by_hops = (
+        summarize_v2(multihop, group_cols=["model", "hops"])
+        if not multihop.empty
+        else pd.DataFrame()
+    )
 
     model_summary.to_csv(PROCESSED_DIR / "summary_by_model.csv", index=False, encoding="utf-8-sig")
     model_summary_valid.to_csv(PROCESSED_DIR / "summary_by_model_niah_valid_only.csv", index=False, encoding="utf-8-sig")
@@ -79,6 +86,13 @@ def _analyze() -> pd.DataFrame:
     call_status_by_length.to_csv(PROCESSED_DIR / "summary_call_status_by_length.csv", index=False, encoding="utf-8-sig")
     variant_summary.to_csv(PROCESSED_DIR / "summary_by_model_variant.csv", index=False, encoding="utf-8-sig")
     length_summary.to_csv(PROCESSED_DIR / "summary_by_model_length.csv", index=False, encoding="utf-8-sig")
+    task_summary.to_csv(PROCESSED_DIR / "summary_by_model_task.csv", index=False, encoding="utf-8-sig")
+    if not multihop_by_hops.empty:
+        multihop_by_hops.to_csv(
+            PROCESSED_DIR / "summary_multihop_by_hops.csv",
+            index=False,
+            encoding="utf-8-sig",
+        )
 
     print("\n" + "=" * 72)
     print("三模型 NIAH 对比 — 主口径：eval_valid 有效样本（排除 content_filter / infra 失败）")
@@ -132,9 +146,8 @@ def _analyze() -> pd.DataFrame:
         plot_position_bias(df_niah, save=True, figures_dir=FIGURES_DIR, eval_valid_only=True)
         plot_depth_accuracy_curve(df_niah, save=True, figures_dir=FIGURES_DIR, eval_valid_only=True)
         plot_efficiency_tradeoff(model_summary_valid, save=True, figures_dir=FIGURES_DIR)
-        mh = df[df["task"] == "multi_hop"]
-        if not mh.empty:
-            plot_multihop_by_hops(mh, save=True, figures_dir=FIGURES_DIR)
+        if not multihop.empty:
+            plot_multihop_by_hops(multihop, save=True, figures_dir=FIGURES_DIR)
         plt.close("all")
         print(f"✅ 图表: {FIGURES_DIR}")
     except ImportError as exc:

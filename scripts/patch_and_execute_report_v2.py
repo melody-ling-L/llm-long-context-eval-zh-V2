@@ -11,6 +11,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 NB_PATH = ROOT / "notebooks/v2/04_report_v2.ipynb"
 EXEC_PATH = ROOT / "results/v2/report/04_report_v2.executed.ipynb"
+HTML_PATH = ROOT / "results/v2/report/llm-long-context-eval-zh-V2-report.html"
 
 
 def _replace_in_cell(cell: dict, old: str, new: str) -> bool:
@@ -101,6 +102,36 @@ def patch_notebook(nb: dict) -> None:
             )
 """,
     )
+    _replace_in_cell(
+        c12,
+        "        n_judge = int((multihop_df['scoring_mode'] == 'judge').sum()) if 'scoring_mode' in multihop_df.columns else 0\n",
+        "        judge_rows = multihop_df[multihop_df['scoring_mode'] == 'judge'] if 'scoring_mode' in multihop_df.columns else pd.DataFrame()\n"
+        "        n_judge_samples = int(judge_rows['sample_id'].nunique()) if not judge_rows.empty else 0\n"
+        "        n_judge_adjudicated = int((judge_rows['judge_status'] == 'adjudicated').sum()) if not judge_rows.empty and 'judge_status' in judge_rows.columns else 0\n",
+    )
+    _replace_in_cell(
+        c12,
+        """        print(
+            f'口径说明：本轮多跳仅运行 {"、".join(format_model_name(m) for m in mh_models)}；'
+            f'其中约 {n_judge} 条为 judge 型开放式答案，目前用子串近似判分，应交由 LLM-as-judge 复核。'
+        )
+""",
+        """        print(
+            f'口径说明：本轮多跳覆盖 {"、".join(format_model_name(m) for m in mh_models)}；'
+            f'{n_judge_samples} 个 judge 型样本共 {n_judge_adjudicated} 个模型回答已通过独立人工裁决表复核。'
+            'EM 保留严格字面口径，Contains 使用裁决结果。'
+        )
+""",
+    )
+    _replace_in_cell(
+        c12,
+        """            'multi-hop 已升级为嵌入长文版（约 %d 条/模型，当前覆盖 %s）。3-hop 显著难于 2-hop，下一步应：补齐 Kimi 多跳、扩充 3-hop 与跨领域样本、并引入 LLM-as-judge 对 judge 型开放答案判分。'
+            % (mh_per_model, '、'.join(format_model_name(m) for m in mh_models))
+""",
+        """            'multi-hop 已升级为嵌入长文版（约 %d 条/模型，当前覆盖 %s）。当前 judge 样本已人工复核；下一步应扩充 3-hop 与跨领域样本，并为新增开放答案接入可复现的 LLM-as-judge。'
+            % (mh_per_model, '、'.join(format_model_name(m) for m in mh_models))
+""",
+    )
 
     # --- cell 13: writing outline markdown ---
     c13 = cells[13]
@@ -114,6 +145,15 @@ def patch_notebook(nb: dict) -> None:
     ).replace(
         "- 若某模型 32K 全灭且 prompt_tokens=0，先查 API 额度/error 列，再查 prompt 模板与截断逻辑。\n",
         "- 若 32K 全灭且 prompt_tokens=0，先查 API 额度/error 列；Kimi 重跑后 32K 已恢复，content_filter 需单独分层。\n",
+    ).replace(
+        "- 注明口径限制：本轮只跑了 DeepSeek 与 Qwen；2 条 judge 型开放式答案目前用子串近似判分，结论需 LLM-as-judge 复核。\n",
+        "- 注明评分口径：3 个模型均已完成；2 个 judge 型样本的 6 个回答已人工复核，EM 保留字面口径，Contains 使用裁决结果。\n",
+    ).replace(
+        "1. 补齐 Kimi 多跳，并把 3-hop 与跨领域样本进一步扩充，收窄多跳的置信区间。\n",
+        "1. 扩充 3-hop 与跨领域样本，收窄多跳的置信区间。\n",
+    ).replace(
+        "2. 引入 LLM-as-judge，处理 judge 型开放式答案，并启动真实任务子集（财报/政策/客服）的采集与标注。\n",
+        "2. 为新增开放答案接入可复现的 LLM-as-judge；当前 2 个 judge 样本继续保留人工裁决审计记录。\n",
     ).splitlines(keepends=True)
 
     # --- cell 14: auto summary ---
@@ -156,6 +196,19 @@ def patch_notebook(nb: dict) -> None:
                 )
 """,
     )
+    _replace_in_cell(
+        c14,
+        """    print(
+        '8. 真实任务子集（财报/政策/客服等真实文档）仍是路线图，尚未采集与标注；'
+        '它与本轮合成多跳相互独立，下一步可按 roadmap 扩到 30-50 条，并引入 LLM-as-judge。'
+    )
+""",
+        """    print(
+        '8. 真实任务子集（财报/政策/客服等真实文档）仍是路线图，尚未采集与标注；'
+        '当前 judge 样本已人工复核，后续规模化扩展时再接入可复现的 LLM-as-judge。'
+    )
+""",
+    )
 
     # Clear code cell outputs only (markdown cells must not have outputs)
     for cell in cells:
@@ -192,6 +245,22 @@ def main() -> int:
     print("Executing notebook...")
     subprocess.run(cmd, cwd=str(ROOT), check=True)
     print(f"Executed report -> {EXEC_PATH}")
+
+    html_cmd = [
+        sys.executable,
+        "-m",
+        "jupyter",
+        "nbconvert",
+        "--to",
+        "html",
+        str(EXEC_PATH),
+        "--output",
+        HTML_PATH.name,
+        "--output-dir",
+        str(HTML_PATH.parent),
+    ]
+    subprocess.run(html_cmd, cwd=str(ROOT), check=True)
+    print(f"Exported HTML -> {HTML_PATH}")
     return 0
 
 

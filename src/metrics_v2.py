@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import re
 from math import sqrt
+from pathlib import Path
 
 import pandas as pd
 
@@ -19,6 +20,14 @@ from src.metrics import _PRICE_TABLE, contains_match, exact_match, normalize_ans
 # 答案尾部的方位/时态词视为可选，缓解 "23:30前" vs "23:30" 这类误判。
 # 注意：只处理尾部方位/时态词，不裸剥数字单位（如 天/人），以免 "20" 误命中 "2025"。
 _OPTIONAL_TAIL = ("以内", "之内", "以前", "以后", "前", "后", "内")
+_DEFAULT_JUDGE_ANNOTATIONS = (
+    Path(__file__).resolve().parents[1]
+    / "data"
+    / "annotations"
+    / "v2"
+    / "multihop_judge_scores.csv"
+)
+_JUDGE_ANNOTATION_COLUMNS = ["judge_score", "judge_reason", "judge_method"]
 
 
 def _parse_aliases(value) -> list[str]:
@@ -73,6 +82,82 @@ def exact_match_v2(prediction: str, expected: str, aliases: list[str] | None = N
     npred = normalize_answer(str(prediction))
     candidates = _answer_candidates(expected, aliases or [])
     return int(any(npred == normalize_answer(cand) for cand in candidates))
+
+
+def load_judge_annotations(path: str | Path = _DEFAULT_JUDGE_ANNOTATIONS) -> pd.DataFrame:
+    """读取可审计的 judge 裁决；不存在时返回空表。"""
+    annotation_path = Path(path)
+    columns = ["model", "sample_id", *_JUDGE_ANNOTATION_COLUMNS]
+    if not annotation_path.exists():
+        return pd.DataFrame(columns=columns)
+
+    annotations = pd.read_csv(annotation_path)
+    required = {"model", "sample_id", "judge_score"}
+    missing = required - set(annotations.columns)
+    if missing:
+        raise ValueError(f"judge 裁决表缺少字段: {sorted(missing)}")
+    if annotations.duplicated(["model", "sample_id"]).any():
+        raise ValueError("judge 裁决表中 model + sample_id 必须唯一")
+
+    scores = pd.to_numeric(annotations["judge_score"], errors="coerce")
+    if scores.isna().any() or not scores.isin([0, 1]).all():
+        raise ValueError("judge_score 只能是 0 或 1")
+    annotations["judge_score"] = scores.astype(int)
+    for column in _JUDGE_ANNOTATION_COLUMNS:
+        if column not in annotations.columns:
+            annotations[column] = ""
+    return annotations[columns]
+
+
+def attach_judge_annotations(
+    df: pd.DataFrame,
+    annotations: pd.DataFrame | None = None,
+) -> pd.DataFrame:
+    """按 model + sample_id 合并 judge 裁决，不改变输入行数与顺序。"""
+    annotated = df.copy()
+    for column in _JUDGE_ANNOTATION_COLUMNS:
+        if column in annotated.columns:
+            annotated = annotated.drop(columns=column)
+
+    if annotations is None:
+        annotations = load_judge_annotations()
+    if annotations.empty or not {"model", "sample_id"}.issubset(annotated.columns):
+        for column in _JUDGE_ANNOTATION_COLUMNS:
+            annotated[column] = pd.NA
+        return annotated
+
+    annotations = annotations.copy()
+    required = {"model", "sample_id", "judge_score"}
+    missing = required - set(annotations.columns)
+    if missing:
+        raise ValueError(f"judge 裁决表缺少字段: {sorted(missing)}")
+    if annotations.duplicated(["model", "sample_id"]).any():
+        raise ValueError("judge 裁决表中 model + sample_id 必须唯一")
+    scores = pd.to_numeric(annotations["judge_score"], errors="coerce")
+    if scores.isna().any() or not scores.isin([0, 1]).all():
+        raise ValueError("judge_score 只能是 0 或 1")
+    annotations["judge_score"] = scores.astype(int)
+    for column in _JUDGE_ANNOTATION_COLUMNS:
+        if column not in annotations.columns:
+            annotations[column] = ""
+
+    before = len(annotated)
+    annotated["_judge_row_order"] = range(before)
+    annotated = annotated.merge(
+        annotations[["model", "sample_id", *_JUDGE_ANNOTATION_COLUMNS]],
+        on=["model", "sample_id"],
+        how="left",
+        validate="many_to_one",
+        sort=False,
+    )
+    annotated = (
+        annotated.sort_values("_judge_row_order")
+        .drop(columns="_judge_row_order")
+        .reset_index(drop=True)
+    )
+    if len(annotated) != before:
+        raise ValueError("合并 judge 裁决后行数发生变化")
+    return annotated
 
 
 _NUMBER_LIKE_PATTERN = re.compile(
@@ -159,8 +244,11 @@ def filter_eval_valid(df: pd.DataFrame) -> pd.DataFrame:
     return attach_call_status(df)[lambda d: d["eval_valid"] == 1].copy()
 
 
-def score_results_v2(df: pd.DataFrame) -> pd.DataFrame:
-    scored = df.copy()
+def score_results_v2(
+    df: pd.DataFrame,
+    judge_annotations: pd.DataFrame | None = None,
+) -> pd.DataFrame:
+    scored = attach_judge_annotations(df, annotations=judge_annotations)
     aliases_col = scored["answer_aliases"] if "answer_aliases" in scored.columns else None
     scored["em_score"] = scored.apply(
         lambda row: exact_match_v2(
@@ -170,7 +258,7 @@ def score_results_v2(df: pd.DataFrame) -> pd.DataFrame:
         ),
         axis=1,
     )
-    scored["contains_score"] = scored.apply(
+    scored["lexical_contains_score"] = scored.apply(
         lambda row: contains_match_v2(
             str(row["model_response"]),
             str(row["expected_answer"]),
@@ -178,6 +266,23 @@ def score_results_v2(df: pd.DataFrame) -> pd.DataFrame:
         ),
         axis=1,
     )
+    scored["contains_score"] = scored["lexical_contains_score"]
+
+    scoring_mode = scored.get(
+        "scoring_mode",
+        pd.Series(["auto"] * len(scored), index=scored.index),
+    ).fillna("auto").astype(str)
+    judge_mask = scoring_mode.eq("judge")
+    adjudicated_mask = judge_mask & scored["judge_score"].notna()
+    scored.loc[adjudicated_mask, "contains_score"] = (
+        scored.loc[adjudicated_mask, "judge_score"].astype(int)
+    )
+    scored["judge_status"] = "not_required"
+    scored.loc[judge_mask, "judge_status"] = "unadjudicated"
+    scored.loc[adjudicated_mask, "judge_status"] = "adjudicated"
+    scored["score_source"] = "lexical"
+    scored.loc[adjudicated_mask, "score_source"] = "judge"
+    scored["contains_score"] = scored["contains_score"].astype(int)
 
     scored["response_chars"] = scored["model_response"].fillna("").astype(str).str.len()
     scored["expected_answer_chars"] = scored["expected_answer"].fillna("").astype(str).str.len()
@@ -273,6 +378,8 @@ def classify_badcase_taxonomy(row: pd.Series) -> str:
     contains = int(row.get("contains_score", contains_match(response, expected)))
     em = int(row.get("em_score", exact_match(response, expected)))
 
+    if row.get("score_source") == "judge" and contains == 1 and em == 0:
+        return "judge 语义正确（字面不匹配）"
     if contains == 1 and em == 0:
         return "输出冗余但包含正确答案"
 

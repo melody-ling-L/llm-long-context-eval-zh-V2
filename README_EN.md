@@ -75,9 +75,11 @@ V1 baseline: [llm-long-context-eval-zh](https://github.com/melody-ling-L/llm-lon
 
 | Model | N | EM | Contains | Notes |
 |-------|:--:|:--:|:--------:|-------|
-| DeepSeek | 32 | 43.8% | 65.6% | 2-hop 74.1%, 3-hop 20.0% |
-| Qwen | 32 | 68.8% | 68.8% | 2-hop 74.1%, 3-hop 40.0% |
-| Kimi | 32 | 50.0% | 56.2% | 2-hop 66.7%, **3-hop 0.0%** |
+| DeepSeek | 32 | 43.8% | 71.9% | 2-hop 81.5%, 3-hop 20.0% |
+| Qwen | 32 | 68.8% | 75.0% | 2-hop 81.5%, 3-hop 40.0% |
+| Kimi | 32 | 50.0% | 62.5% | 2-hop 74.1%, **3-hop 0.0%** |
+
+The six model responses for the two `judge`-mode samples were manually adjudicated in a separate audit table. EM remains lexical; Contains uses the adjudicated result.
 
 ---
 
