@@ -8,6 +8,8 @@
 [![Repeats](https://img.shields.io/badge/repeats-10-purple)](#methodology)
 [![Status](https://img.shields.io/badge/status-final_v2-success)](#v2-results)
 
+**最后冻结版本：v2.0.1（2026-06）** — 数据、评分、图表、报告及 judge 裁决均已定稿，后续仅修严重错误。
+
 > 面向中文长上下文场景的 **V2 基准仓库**。这一版把单格重复数从 3 提高到 10，并引入 `style_aligned`、`numeric_confusable`、`multi_key` 三类更难的中文 NIAH 变体。
 >
 > 当前仓库包含 **完整 V2 结果层**：3 个模型、5 个上下文长度、7 个深度点、10 次重复，共 **1050 条 NIAH 原始调用 + 96 条 multi_hop 结果（32 条/模型）**，附带 `results/v2/` 下的汇总表、taxonomy CSV 与报告图表。
