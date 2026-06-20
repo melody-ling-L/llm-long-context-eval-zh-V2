@@ -13,7 +13,6 @@
 
 import json
 import random
-import re
 from pathlib import Path
 
 import yaml
