@@ -10,7 +10,6 @@
 from __future__ import annotations
 
 import json
-import os
 import time
 from collections import Counter
 from pathlib import Path
@@ -21,7 +20,7 @@ from dotenv import load_dotenv
 from tqdm import tqdm
 
 from src.eval_runner import call_model, get_api_key, get_client
-from src.metrics_v2 import is_content_filter_failure, is_infra_api_failure
+from src.metrics_v2 import is_content_filter_failure
 
 load_dotenv()
 
